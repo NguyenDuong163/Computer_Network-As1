@@ -25,7 +25,10 @@ class Client:
             print('Received list of peers from tracker:', response_dict[b'peers'])
         else:
             print('Error:', response_dict[b'message'])
-
+        if response == b'505':
+            print('Received check message from server')
+            # Send a response back to the server
+            self.send_response(b'alive')
     def close_connection(self):
         # Close the socket connection
         self.client_socket.close()
@@ -40,5 +43,9 @@ if __name__ == '__main__':
     event = b'completed'
 
     client.send_request(info_hash, peer_id, event)
-    client.receive_response()
-    client.close_connection()
+    try:
+        while True:
+            client.receive_response()
+    except KeyboardInterrupt:
+        client.close_connection()
+    # client.close_connection()
