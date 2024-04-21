@@ -1,0 +1,7 @@
+Chia 1 file input (ở định dạng bất kì) sang các chunk files (dạng .bin)
+
+Đường dẫn nên là \\
+
+file_path: có thể là ở 1 chỗ bất kì trên máy tính
+output file: sẽ tạo 1 output file ở working directory, nơi lưu toàn bộ chunk files
+
