@@ -2,6 +2,8 @@ import socket
 import threading
 import bencodepy # type: ignore
 import time
+import pandas as pd
+
 class TrackerServer:
     def __init__(self, host, port):
         self.host = host
@@ -28,6 +30,9 @@ class TrackerServer:
         # Start the client checking thread
         check_thread = threading.Thread(target=self.check_clients)
         check_thread.start()
+
+        update_thread = threading.Thread(target=self.update_xlsx)
+        update_thread.start()
 
         while True:
             # Accept a client connection
@@ -73,8 +78,28 @@ class TrackerServer:
                     continue
                 # Here you can perform additional checks or operations on the client if needed
 
-            
-                    
+
+    def update_xlsx(self):
+        #TODO write info of self.clients to xlsx file
+        # df = pd.DataFrame(self.clients, columns=['Client Socket'])
+        # df.to_excel('clients.xlsx', index=False)
+        while True:
+            time.sleep(5)
+            # print("HAHAHA", self.clients)
+            df = pd.DataFrame(self.clients, columns=['Client Socket'])
+            df.to_excel('clients.xlsx', index=False)
+            data = []
+            for info_hash, peers in self.torrents.items():
+                for peer in peers:
+                    data.append([info_hash, peer['peer_id'], peer['ip'], peer['port']])
+            df = pd.DataFrame(data, columns=['Info Hash', 'Peer ID', 'IP', 'Port'])
+            df.to_excel('torrents.xlsx', index=False)
+
+            # for info_hash, peers in self.torrents.items():
+            #     print(f"Info Hash: {info_hash}")
+            #     for peer in peers:
+            #         print(f"    Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
+
     def handle_client(self, client_socket, client_address):
         while True:
             try:
@@ -132,4 +157,3 @@ class TrackerServer:
 if __name__ == '__main__':
     server = TrackerServer('localhost', 12345)
     server.start()
-
