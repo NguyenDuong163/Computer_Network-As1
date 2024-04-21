@@ -53,8 +53,17 @@ class TrackerServer:
                     response = bencodepy.encode(response_dict)
                     with self.send_lock:
                         client.send(response)
-                    if self.data_check == True:
-                        print('Client is alive')
+                    count = 3
+                    while count > 0:
+                        time.sleep(1)
+                        count -= 1
+                        if self.data_check == True:
+                            print('Client is alive')
+                            break
+                    if count == 0: # Client did not respond
+                        print('Client is not responding')
+                        client.close()
+                        self.clients.remove(client)
                     self.data_check = False
                 except OSError:  # Socket is closed
                     print("Client has disconnected")
