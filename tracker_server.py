@@ -39,9 +39,9 @@ class TrackerServer:
             client_socket, client_address = self.server_socket.accept()
             self.clients.append(client_socket)
             #DEBUG
-            print(self.clients)
+            # print(self.clients)
             #
-            print('New connection from {}:{}'.format(*client_address))
+            # print('New connection from {}:{}'.format(*client_address))
 
             # Create a new thread to handle the client
             client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_address))
@@ -100,6 +100,9 @@ class TrackerServer:
             #     for peer in peers:
             #         print(f"    Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
 
+    def is_client_connected(self, client_socket):
+        return client_socket in self.clients
+
     def handle_client(self, client_socket, client_address):
         while True:
             try:
@@ -113,6 +116,13 @@ class TrackerServer:
                     peer_id = request[b'peer_id']
                     port = request.get(b'port', client_address[1])  # Use the client's port if not provided
                     event = request.get(b'event', b'').decode()  # Default to an empty string if not provided
+                    if event == 'init':
+                        status = b'100'
+                        response_dict = {b'status': status}
+                        response = bencodepy.encode(response_dict)
+                        with self.send_lock:
+                            client_socket.send(response)
+                        continue
                     if event == 'check_response':
                         self.data_check = True
                     else:
