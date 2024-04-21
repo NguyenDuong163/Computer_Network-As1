@@ -63,6 +63,8 @@ class TrackerServer:
                     if count == 0: # Client did not respond
                         print('Client is not responding')
                         client.close()
+                        for info_hash, peers in self.torrents.items():
+                            self.torrents[info_hash] = [peer for peer in peers if peer['peer_id'] != client.peer_id]
                         self.clients.remove(client)
                     self.data_check = False
                 except OSError:  # Socket is closed
