@@ -4,17 +4,19 @@
   "tracker_port": 12345,
   "completed": [
     {
-      "info_hash": "abc.exe",
+      "file_path": "abc.pdf",
+      "info_hash": "a\tÆ´LV\u0004\u008A\u0083®M\u0006W\\\u008D:\u0087{ië",
       "pieces": 30
     },
     {
-      "info_hash": "123.pdf",
+      "file_path": "xyz.exe",
+      "info_hash": "abc",
       "pieces": 20
     }
   ],
   "uncompleted": [
     {
-      "info_hash": "hehe.txt",
+      "info_hash": "hehe",
       "remain_pieces": [1, 2, 3, 4]
     },
     {

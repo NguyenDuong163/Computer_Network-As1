@@ -70,19 +70,23 @@ class Peer:
     ######################## Protocol method (end) ######################################
 
     ######################## Thread method (start) ######################################
-    def leecher_check(self):
-        # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
-        return
-
     def maintain_connection(self):
+        # Todo: assign to Tran Tai
         # Todo: Máy bạn duy trì kết nối với tracker -> Cập nhật Metainfo thường xuyên (vì người dùng có thể đưa thêm 1 file torrent mới lên hệ thống)
         return
 
     def user_download_check(self):
+        # Todo: assign to Tran Tai
         # Todo: Người dùng muốn tải một file trong các file torrent mà tracker đã cập nhật (nhớ kiểm tra xem file đó có trong self.file_list chưa)
         return
 
+    def leecher_check(self):
+        # Todo: assign to Sy Duong
+        # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
+        return
+
     def user_upload_check(self):
+        # Todo: assign to Sy Duong
         # Todo: Người dùng tạo mới 1 file torrent từ 1 file sẵn có trong máy, sau đó cập nhật file torrent đó vào Metainfo file và self.file_list (Việc cập nhật lên server sẽ ằm ở thread maintain_connection)
         return
 
@@ -101,18 +105,6 @@ class Peer:
             response = self.receive_response_tracker()
             if self.handle_response_tracker(response) == 1:
                 break
-
-        # # TODO: the peer send metainfo to the tracker (Application layer Handshaking with the tracker - DatPhan)
-        # while True:
-        #     # User login
-        #     self.peer_id = self.user_login()
-        #
-        #     # Establish connection with the tracker (send metainfo to the tracker)
-        #     info_hash = b''
-        #     self.send_request_tracker(info_hash, self.peer_id, 'started')
-        #     response_dict = self.receive_response_tracker()
-        #     if self.handle_response_tracker(response_dict) == 1:
-        #         break
 
     def start(self):
         # Load the previous param of the peer
