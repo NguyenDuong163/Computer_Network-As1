@@ -5,8 +5,8 @@ import bencodepy
 import time
 import pandas as pd
 
-class Tracker:
-    def __init__(self, port, host):
+class TrackerServer:
+    def __init__(self, host, port):
         self.host = host
         self.port = port
         self.server_socket = None
@@ -52,7 +52,13 @@ class Tracker:
                 self.torrents[info_hash] = []
 
             if event == 'init':
-                # Todo: The peer send metainfo to the tracker
+                # Todo: The peer send torrent list to the tracker
+                completed_list = request[b'completed']
+                print(completed_list)
+                status = b'100'
+                response_dict = {b'status': status}
+                response = bencodepy.encode(response_dict)
+                client_socket.send(response)
                 return 0
             elif event == 'started':
                 # Todo: The peer send info_hash of a torrent file to the tracker
@@ -72,3 +78,7 @@ class Tracker:
             elif event == 'stopped':
                 if info_hash in self.torrents and peer_info in self.torrents[info_hash]:
                     self.torrents[info_hash].remove(peer_info)
+
+if __name__ == '__main__':
+    server = TrackerServer('localhost', 12345)
+    server.start()

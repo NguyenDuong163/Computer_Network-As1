@@ -1,0 +1,25 @@
+{
+  "security_code": "admin1",
+  "tracker_ip": "localhost",
+  "tracker_port": 12345,
+  "completed": [
+    {
+      "info_hash": "abc.exe",
+      "pieces": 30
+    },
+    {
+      "info_hash": "123.pdf",
+      "pieces": 20
+    }
+  ],
+  "uncompleted": [
+    {
+      "info_hash": "hehe.txt",
+      "remain_pieces": [1, 2, 3, 4]
+    },
+    {
+      "info_hash": "cn.pdf",
+      "remain_pieces": [3, 4, 30, 50]
+    }
+  ]
+}
