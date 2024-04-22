@@ -18,6 +18,9 @@ class Peer:
         self.security_code = 0
         self.client_socket = None
         self.tracker_address = ()
+        self.tracker_response_stack = []
+        self.tracker_request_lock = 0       # Lock sending message to tracker (1-lock & 0-unlock)
+        self.user_command_stack = []
 
     ########################## Misc method (start) ##########################################
     def load_param(self, json_path):
@@ -46,9 +49,16 @@ class Peer:
         self.client_socket.connect(tracker_address)
 
     def send_request_tracker(self, info_hash, peer_id, event, completed_torrent):
+        # Wait until sender is released
+        while self.tracker_request_lock == 1:
+            continue
+        # Lock sending message
+        self.tracker_request_lock = 0
         # Send a request to the tracker
         request = bencodepy.encode({b'info_hash': info_hash, b'peer_id': peer_id, b'event': event, b'completed': completed_torrent})
         self.client_socket.send(request)
+        # Unlock sending message to tracker
+        self.tracker_request_lock = 1
 
     def receive_response_tracker(self):
         # Receive the response from the tracker
@@ -73,19 +83,40 @@ class Peer:
 
     ######################## Thread method (start) ######################################
     # Description: Maintain connection with the tracker
-    def maintain_connection(self):
+    # def maintain_connection(self):
+    #
+    #     # Todo: assign to Tran Tai
+    #     # Todo: Máy bạn duy trì kết nối với tracker -> Cập nhật completed_list thường xuyên (vì người dùng có thể đưa thêm 1 file torrent mới lên hệ thống)
+    #     # Description:  - Interval = 1 second
+    #     #               - Message = {b'event': 'check_response'}
+    #
+    #     return
+    #
+    # def user_download_check(self):
+    #     # Todo: assign to Tran Tai
+    #     # Todo: Người dùng muốn tải một file trong các file torrent mà tracker đã cập nhật (nhớ kiểm tra xem file đó có trong self.file_list chưa)
+    #     return
+    # def user_upload_check(self):
+    #     # -> Người dùng tạo 1 file torrent - "\TorrentList\abc.txt"
+    #     # -> Tách nó ra 1 folder gồm casc piece (giả sử dc 100 mảnh)
+    #     #       folder name:    abc_txt             <file_name>_<type>
+    #     #       piece name:     abc_txt_0.bin       <folder_name>_<piece_num>.bin
+    #     #                       abc_txt_1.bin
+    #     #                       abc_txt_2.bin
+    #     # -> Đưa vô completed_list
+    #     # Todo: assign to Sy Duong
+    #     # Todo: Người dùng tạo mới 1 file torrent từ 1 file sẵn có trong máy, sau đó cập nhật file torrent đó vào Metainfo file và self.file_list (Việc cập nhật lên server sẽ ằm ở thread maintain_connection)
+    #     return
 
-        # Todo: assign to Tran Tai
-        # Todo: Máy bạn duy trì kết nối với tracker -> Cập nhật completed_list thường xuyên (vì người dùng có thể đưa thêm 1 file torrent mới lên hệ thống)
-        # Description:  - Interval = 1 second
-        #               - Message = {b'event': 'check_response'}
+    def tracker_check(self):
+        while True:
+            response_dict = self.receive_response_tracker()
+            self.tracker_response_stack.append(response_dict)
 
-        return
-
-    def user_download_check(self):
-        # Todo: assign to Tran Tai
-        # Todo: Người dùng muốn tải một file trong các file torrent mà tracker đã cập nhật (nhớ kiểm tra xem file đó có trong self.file_list chưa)
-        return
+    def user_check(self):
+        while True:
+            user_command = input("User command-line: ")
+            self.user_command_stack.append(user_command)
 
     def leecher_check(self):
         leecher_handle = socket.socket()
@@ -126,21 +157,8 @@ class Peer:
                 'info_hash': b'123'
             }
         }
-
         # Todo: assign to Sy Duong
         # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
-        return
-
-    def user_upload_check(self):
-        # -> Người dùng tạo 1 file torrent - "\TorrentList\abc.txt"
-        # -> Tách nó ra 1 folder gồm casc piece (giả sử dc 100 mảnh)
-        #       folder name:    abc_txt             <file_name>_<type>
-        #       piece name:     abc_txt_0.bin       <folder_name>_<piece_num>.bin
-        #                       abc_txt_1.bin
-        #                       abc_txt_2.bin
-        # -> Đưa vô completed_list
-        # Todo: assign to Sy Duong
-        # Todo: Người dùng tạo mới 1 file torrent từ 1 file sẵn có trong máy, sau đó cập nhật file torrent đó vào Metainfo file và self.file_list (Việc cập nhật lên server sẽ ằm ở thread maintain_connection)
         return
 
     ######################### Thread method (end) #######################################
@@ -174,21 +192,21 @@ class Peer:
         # Establish connection (Application layer Handshake): The peer send metainfo to the tracker
         self.establish_connection()
 
-        # Create 4 threads  -> leecher_check (another peer want to download your file)
-        #                   -> maintain_connection (keep-alive and updating metainfo message with the tracker)
-        #                   -> user_download_check: user want to download a new file  -> "start downloading" stage
-        #                   -> user_upload_check: user want to upload a new torrent file to tracker
+        # Create 3 main threads -> leecher_check (another peer want to download your file)
+        #                       -> tracker_check: receive message from the tracker and store the message to stack
+        #                       -> user_check: receive user's command
+        #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
+        #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
+        #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker
         leecher_check_thread = threading.Thread(target=self.leecher_check())
         leecher_check_thread.start()
 
-        maintain_connection_thread = threading.Thread(target=self.maintain_connection())
-        maintain_connection_thread.start()
+        tracker_check_thread = threading.Thread(target=self.tracker_check())
+        tracker_check_thread.start()
 
-        user_download_check_thread = threading.Thread(target=self.user_download_check())
-        user_download_check_thread.start()
+        user_check_thread = threading.Thread(target=self.user_check())
+        user_check_thread.start()
 
-        user_upload_check_thread = threading.Thread(target=self.user_upload_check())
-        user_upload_check_thread.start()
     ######################### Flow method (end) #######################################
 
 
