@@ -42,10 +42,46 @@ class Peer:
         while security_code != self.security_code:
             print("Wrong username or password. Please try again")
 
-    def parse_user_command(self, user_command):
+    def upload_handle(self, file_path):
+        # Description: Hàm sẽ xử lý việc tách file thành các pieces và lưu vào folder tương ứng, sau đó cập nhật file vào completed_list
+        # Param: file_path: đường dẫn tới file cần upload
+        # Todo:     -> Copy file trên vào folder pieces_folder
+        #           -> Tạo 1 folder có định dạng tên là <file_name>_<file_exten> (vd: adc.pdf -> folder tên là 'abc_pdf')
+        #           -> Tách file đó vào bên trong folder trên
+        #           -> Tạo ra 1 mã info_hash từ tên file (info_hash = hash(<file_name>))
+        #           -> Thêm 1 dictionary gồm thông tin (pieces_path, info_hash và pieces) vào self.completed_list (Nhìn định daạng trong file TorrentList.json để hiểu rõ thêm)
+        # Ví dụ về các tham số
+        #                   self.upload_handle('\\hehe_folder\\myCV.pdf')
+        #
+        # Ví dụ về định dạng tách:
+        #       -> Tách nó ra 1 folder gồm các piece (giả sử dc 100 mảnh)
+        #           folder name:    myCV_pdf            -> Định dạng: <file_name>_<type>
+        #           folder_path     /pieces_folder/     -> Nằm trong folder pieces_folder
+        #           piece name:     myCV_pdf_0.bin      -> Định dạng: <folder_name>_<piece_num>.bin
+        #                           myCV_pdf_1.bin
+        #                           myCV_pdf_2.bin
+        #                           .............
+        #                           myCV_pdf_99.bin
+        return
+
+    def handle_user_command(self, user_command):
+        # Parse the user command
+        command_split = user_command.split(':')
+        command_type = command_split[0]
+        command_param = command_split[1]
+        if command_type == 'Download':
+            return
+        elif command_type == 'Uploading':
+            self.upload_handle(command_param)
+        else:
+            print("Wrong command format")
         # if type of the command is Uploading
+        #       upload_handle():
         #       -> Copy file vào pieces_folder
         #       -> Chia file vào folder phù hợp (vd: myCV.pdf -> đưa vào folder myCV_pdf trong folder pieces_folder)
+        # if type of the command is Downloading
+        #       download_handle():
+        #       -> Chia file
 
         return
     ########################## Misc method (end) ##########################################
@@ -136,9 +172,8 @@ class Peer:
     def user_handle(self):
         while True:
             if self.user_command_queue.qsize() > 0:
-                # Todo: Parse user command
-                return
-        return
+                # Todo: Handle user command ()
+                self.handle_user_command(self.user_command_queue.get())
 
     def leecher_check(self):
         leecher_handle = socket.socket()
