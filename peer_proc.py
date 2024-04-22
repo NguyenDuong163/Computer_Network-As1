@@ -34,14 +34,16 @@ class Peer:
         peer_password = input("Password: ")
         # Hash login information
         security_code = peer_username + peer_password
-        return security_code
+        # Username: admin
+        # Password: 1
+        while security_code != self.security_code:
+            print("Wrong username or password. Please try again")
     ########################## Misc method (end) ##########################################
 
     ######################## Protocol method (start) ######################################
     def connect_to_tracker(self, tracker_address):
         # Connect to the tracker server
         self.client_socket.connect(tracker_address)
-        print(f'Connected to Tracker{tracker_address}')
 
     def send_request_tracker(self, info_hash, peer_id, event, completed_torrent):
         # Send a request to the tracker
@@ -70,9 +72,14 @@ class Peer:
     ######################## Protocol method (end) ######################################
 
     ######################## Thread method (start) ######################################
+    # Description: Maintain connection with the tracker
     def maintain_connection(self):
+
         # Todo: assign to Tran Tai
-        # Todo: Máy bạn duy trì kết nối với tracker -> Cập nhật Metainfo thường xuyên (vì người dùng có thể đưa thêm 1 file torrent mới lên hệ thống)
+        # Todo: Máy bạn duy trì kết nối với tracker -> Cập nhật completed_list thường xuyên (vì người dùng có thể đưa thêm 1 file torrent mới lên hệ thống)
+        # Description:  - Interval = 1 second
+        #               - Message = {b'event': 'check_response'}
+
         return
 
     def user_download_check(self):
@@ -81,11 +88,57 @@ class Peer:
         return
 
     def leecher_check(self):
+        leecher_handle = socket.socket()
+        leecher_handle.bind(('localhost', 5003))
+        leecher_handle.listen(5)
+
+        while True:
+            # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
+            break
+        # Handshake (receiver -> sender)
+        packet = {
+            "TOPIC": "DOWNLOAD REQUEST",
+            "HEADER": {
+                'type': 'Handshake',
+                'source_ip': "1:1:1:1",
+                'source_port': 5003,
+                'info_hash': b'123'
+            }
+        }
+        # Handshake (sender -> receiver)
+        # Nếu sender có file đó (check 'info_hash' xem có ko)
+        packet = {
+            "TOPIC": "UPLOADING",
+            "HEADER": {
+                'type': 'ACK',
+                'source_ip': "1:1:1:1",
+                'source_port': 5000,
+                'info_hash': b'123'
+            }
+        }
+        # Nếu sender ko có file đó
+        packet = {
+            "TOPIC": "UPLOADING",
+            "HEADER": {
+                'type': 'NACK',
+                'source_ip': "1:1:1:1",
+                'source_port': 5000,
+                'info_hash': b'123'
+            }
+        }
+
         # Todo: assign to Sy Duong
         # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
         return
 
     def user_upload_check(self):
+        # -> Người dùng tạo 1 file torrent - "\TorrentList\abc.txt"
+        # -> Tách nó ra 1 folder gồm casc piece (giả sử dc 100 mảnh)
+        #       folder name:    abc_txt             <file_name>_<type>
+        #       piece name:     abc_txt_0.bin       <folder_name>_<piece_num>.bin
+        #                       abc_txt_1.bin
+        #                       abc_txt_2.bin
+        # -> Đưa vô completed_list
         # Todo: assign to Sy Duong
         # Todo: Người dùng tạo mới 1 file torrent từ 1 file sẵn có trong máy, sau đó cập nhật file torrent đó vào Metainfo file và self.file_list (Việc cập nhật lên server sẽ ằm ở thread maintain_connection)
         return
@@ -95,10 +148,6 @@ class Peer:
     ######################### Flow method (start) #######################################
     def establish_connection(self):
         info_hash = b''
-        # Username: admin
-        # Password: 1
-        while self.user_login() != self.security_code:
-            print("Wrong username or password. Please try again")
         print("Connecting to the tracker ......")
         while True:
             self.send_request_tracker(info_hash, self.peer_id, 'init', self.completed_list)
@@ -109,6 +158,9 @@ class Peer:
     def start(self):
         # Load the previous param of the peer
         self.load_param("TorrentList.json")
+
+        # User login
+        self.user_login()
 
         # Create a socket
         self.client_socket = socket.socket()

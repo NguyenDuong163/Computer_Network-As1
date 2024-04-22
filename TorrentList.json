@@ -4,14 +4,19 @@
   "tracker_port": 12345,
   "completed": [
     {
-      "file_path": "abc.pdf",
+      "piece_path": "\\Torrent\\abc_pdf",
       "info_hash": "a\tÆ´LV\u0004\u008A\u0083®M\u0006W\\\u008D:\u0087{ië",
       "pieces": 30
     },
     {
-      "file_path": "xyz.exe",
+      "piece_path": "\\Torrent\\xyz_exe",
       "info_hash": "abc",
       "pieces": 20
+    },
+    {
+      "piece_path": "\\Torrent\\abc_txt",
+      "info_hash": "abc.txt",
+      "pieces": 100
     }
   ],
   "uncompleted": [
