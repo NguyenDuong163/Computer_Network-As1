@@ -3,7 +3,7 @@ import json
 from peer_test_define import *
 import socket
 import bencodepy
-from enum import Enum
+import queue
 from urllib.parse import urlparse
 #import requests
 
@@ -18,9 +18,9 @@ class Peer:
         self.security_code = 0
         self.client_socket = None
         self.tracker_address = ()
-        self.tracker_response_stack = []
+        self.tracker_response_queue = queue.Queue()
         self.tracker_request_lock = 0       # Lock sending message to tracker (1-lock & 0-unlock)
-        self.user_command_stack = []
+        self.user_command_queue = queue.Queue()
 
     ########################## Misc method (start) ##########################################
     def load_param(self, json_path):
@@ -41,6 +41,13 @@ class Peer:
         # Password: 1
         while security_code != self.security_code:
             print("Wrong username or password. Please try again")
+
+    def parse_user_command(self, user_command):
+        # if type of the command is Uploading
+        #       -> Copy file vào pieces_folder
+        #       -> Chia file vào folder phù hợp (vd: myCV.pdf -> đưa vào folder myCV_pdf trong folder pieces_folder)
+
+        return
     ########################## Misc method (end) ##########################################
 
     ######################## Protocol method (start) ######################################
@@ -55,7 +62,7 @@ class Peer:
         # Lock sending message
         self.tracker_request_lock = 0
         # Send a request to the tracker
-        request = bencodepy.encode({b'info_hash': info_hash, b'peer_id': peer_id, b'event': event, b'completed': completed_torrent})
+        request = bencodepy.encode({b'info_hash': info_hash, b'peer_id': peer_id, b'event': event, b'completed_torrent': completed_torrent})
         self.client_socket.send(request)
         # Unlock sending message to tracker
         self.tracker_request_lock = 1
@@ -79,6 +86,9 @@ class Peer:
         elif status_field == b'100':  # Wrong username or password
             print("Connected")
             return 1
+
+    def handle_keep_alive_tracker(self):
+        self.send_request_tracker(info_hash=b'', peer_id=self.peer_id, event='check_response', completed_torrent=self.completed_list)
     ######################## Protocol method (end) ######################################
 
     ######################## Thread method (start) ######################################
@@ -110,13 +120,25 @@ class Peer:
 
     def tracker_check(self):
         while True:
-            response_dict = self.receive_response_tracker()
-            self.tracker_response_stack.append(response_dict)
+            message = self.receive_response_tracker()
+            # Handle immediately (if message is a keep-alive message)
+            if b'status' in message:
+                if message[b'status'] == b'505':
+                    self.handle_keep_alive_tracker()
+                    return
+            self.tracker_response_queue.put(message)
 
     def user_check(self):
         while True:
             user_command = input("User command-line: ")
-            self.user_command_stack.append(user_command)
+            self.user_command_queue.put(user_command)
+
+    def user_handle(self):
+        while True:
+            if self.user_command_queue.qsize() > 0:
+                # Todo: Parse user command
+                return
+        return
 
     def leecher_check(self):
         leecher_handle = socket.socket()

@@ -146,18 +146,67 @@ def handle_leecher(leecher_socket, address):
 
 
 
+peer_id = 0
 
 
 
-packet = {
-    "TOPIC": "DOWLOADING",
-    "HEADER": {
-        "Source Address": "1:1:1:1",
-        "Source Port"
-        "FileName": "YourCV.pdf"
-    },
-    "BODY": {
-        "Connection information to FTP server": "abcdef"
+init_message_from_tracker_to_peer = {
+    b'status': b'505',
+    b'torrent_list': {
+        {
+          "file_name": "abc.pdf",
+          "info_hash": "a\tÆ´LV\u0004\u008A\u0083®M\u0006W\\\u008D:\u0087{ië",
+        },
+        {
+          "file_name": "xyz.exe",
+          "info_hash": "b\tCD\u0003\u0082\u0081\u0006W\\\u008D:\u0087{yë"
+        }
+    }
+}
+
+init_message = {
+    b'info_hash': b'',
+    b'peer_id': 0,
+    b'event': 'init',
+    b'completed_torrent': {
+        {
+          "piece_path": "\\Torrent\\abc_pdf",
+          "info_hash": "a\tÆ´LV\u0004\u008A\u0083®M\u0006W\\\u008D:\u0087{ië",
+          "pieces": 30
+        },
+        {
+          "piece_path": "\\Torrent\\xyz_exe",
+          "info_hash": "b\tCD\u0003\u0082\u0081\u0006W\\\u008D:\u0087{yë",
+          "pieces": 20
+        },
+        {
+          "piece_path": "\\Torrent\\abc_txt",
+          "info_hash": "c\tAB\u0001\u0080\u0081\u0006A\\\u008D:\u0087{xë",
+          "pieces": 100
+        }
+    }
+}
+
+keep_alive_message = {
+    b'info_hash': b'',
+    b'peer_id': peer_id,
+    b'event': 'check_response',
+    b'completed_torrent': {
+        {
+          "piece_path": "\\Torrent\\abc_pdf",
+          "info_hash": "a\tÆ´LV\u0004\u008A\u0083®M\u0006W\\\u008D:\u0087{ië",
+          "pieces": 30
+        },
+        {
+          "piece_path": "\\Torrent\\xyz_exe",
+          "info_hash": "b\tCD\u0003\u0082\u0081\u0006W\\\u008D:\u0087{yë",
+          "pieces": 20
+        },
+        {
+          "piece_path": "\\Torrent\\abc_txt",
+          "info_hash": "c\tAB\u0001\u0080\u0081\u0006A\\\u008D:\u0087{xë",
+          "pieces": 100
+        }
     }
 }
 

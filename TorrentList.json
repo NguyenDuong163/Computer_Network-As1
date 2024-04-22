@@ -10,12 +10,12 @@
     },
     {
       "piece_path": "\\Torrent\\xyz_exe",
-      "info_hash": "abc",
+      "info_hash": "b\tCD\u0003\u0082\u0081\u0006W\\\u008D:\u0087{yë",
       "pieces": 20
     },
     {
       "piece_path": "\\Torrent\\abc_txt",
-      "info_hash": "abc.txt",
+      "info_hash": "c\tAB\u0001\u0080\u0081\u0006A\\\u008D:\u0087{xë",
       "pieces": 100
     }
   ],
