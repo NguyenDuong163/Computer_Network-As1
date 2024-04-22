@@ -1,55 +1,42 @@
 import socket
 import tqdm
 import os
-# device's IP address
-SERVER_HOST = "10.0.244.129"
-SERVER_PORT = 3232
-# receive 4096 bytes each time
-BUFFER_SIZE = 4096
-SEPARATOR = "<SEPARATOR>"
 
-# create the server socket
-# TCP socket
-s = socket.socket()
+class Server:
+    SEPARATOR = "<SEPARATOR>"
+    BUFFER_SIZE = 4096  # receive 4096 bytes each time
 
-# bind the socket to our local address
-s.bind((SERVER_HOST, SERVER_PORT))
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.server_socket = socket.socket()  # TCP socket
+        self.server_socket.bind((self.host, self.port))
 
-# enabling our server to accept connections
-# 5 here is the number of unaccepted connections that
-# the system will allow before refusing new connections
-s.listen(5)
-print(f"[*] Listening as {SERVER_HOST}:{SERVER_PORT}")
+    def start(self):
+        self.server_socket.listen(5)  # enable the server to accept connections
+        print(f"[*] Listening as {self.host}:{self.port}")
+        self.client_socket, self.address = self.server_socket.accept()  # accept connection if there is any
+        print(f"[+] {self.address} is connected.")
 
-# accept connection if there is any
-client_socket, address = s.accept() 
-# if below code is executed, that means the sender is connected
-print(f"[+] {address} is connected.")
+    def receive_file(self):
+        received = self.client_socket.recv(self.BUFFER_SIZE).decode()
+        filename, filesize = received.split(self.SEPARATOR)
+        filename = os.path.basename(filename)  # remove absolute path if there is
+        filesize = int(filesize)  # convert to integer
 
-# receive the file infos
-# receive using client socket, not server socket
-received = client_socket.recv(BUFFER_SIZE).decode()
-filename, filesize = received.split(SEPARATOR)
-# remove absolute path if there is
-filename = os.path.basename(filename)
-# convert to integer
-filesize = int(filesize)
+        with open(filename, "wb") as f:
+            while True:
+                bytes_read = self.client_socket.recv(self.BUFFER_SIZE)
+                if not bytes_read:    
+                    break  # file transmitting is done
+                f.write(bytes_read)  # write to the file the bytes we just received
 
-# start receiving the file from the socket
-# and writing to the file stream
+    def close_connection(self):
+        self.client_socket.close()
+        self.server_socket.close()
 
-with open(filename, "wb") as f:
-    while True:
-        # read 1024 bytes from the socket (receive)
-        bytes_read = client_socket.recv(BUFFER_SIZE)
-        if not bytes_read:    
-            # nothing is received
-            # file transmitting is done
-            break
-        # write to the file the bytes we just received
-        f.write(bytes_read)
-        
-# close the client socket
-client_socket.close()
-# close the server socket
-s.close()
+# usage
+server = Server("10.0.244.129", 5000)
+server.start()
+server.receive_file()
+server.close_connection()
