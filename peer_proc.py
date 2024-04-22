@@ -49,6 +49,13 @@ class Peer:
         hashed_string = hashed_bytes.hexdigest()
         return hashed_string.encode('utf-8')
 
+    def get_info_hash(self, torrent_path):
+        with open(torrent_path, 'rb') as torrent_file:
+            info_hash = torrent_file.read()
+        return info_hash
+    ########################## Misc method (end) ##########################################
+
+    ########################## Handling method (start) ##########################################
     def upload_handle(self, file_path):
         # Description: Hàm sẽ xử lý việc tách file thành các pieces và lưu vào folder tương ứng, sau đó cập nhật file vào completed_list
         # Param: file_path: đường dẫn tới file cần upload
@@ -56,7 +63,9 @@ class Peer:
         #           -> Tạo 1 folder có định dạng tên là <file_name>_<file_exten> (vd: adc.pdf -> folder tên là 'abc_pdf')
         #           -> Tách file đó vào bên trong folder trên
         #           -> Tạo ra 1 mã info_hash từ tên file (info_hash = self.hash_file_name(<file_name>))
-        #           -> Thêm 1 dictionary gồm thông tin (pieces_path, info_hash và pieces) vào self.completed_list (Nhìn định daạng trong file TorrentList.json để hiểu rõ thêm)
+        #           -> Tạo 1 dictionary gồm thông tin (pieces_path, info_hash và pieces) và thêm vào self.completed_list (Nhìn định daạng trong file TorrentList.json để hiểu rõ thêm)
+        #           -> Tạo mới 1 file `.json` có tên là `<file_name>_metainfo.json` vào trong folder metainfo_folder
+        #           -> Lưu dictionary của bước trên vào file '.json' đó (có thể hiểu đây là file .torrent của nhóm mình)
         # Ví dụ về các tham số
         #                   self.upload_handle('\\hehe_folder\\myCV.pdf')
         #
@@ -72,7 +81,23 @@ class Peer:
         return
 
     def download_handle(self, torrent_path):
+        # Description:  Người dùng cung cấp đường dẫn đến file torrent (torrent_path) tương ứng với file cần tải
+        # Todo:         -> Lấy info_hash từ file torrent
+        #               -> Gửi yêu cầu lên tracker server kèm theo info_hash + 'event' == 'started'
+        #               -> Nhận peer_list từ Tracker server
+        #               -> Tạo 1 bảng (pieces_state_table) về tiến trình của tất cả các piece của file cần tải
+        #               |    Piece Number   |       State           |
+        #               |       Piece 1     |       completed       |
+        #               |       Piece 2     |       processing      |
+        #               |       Piece 3     |       pending         |
+        #               | ..............    |   ................    |
+        #               * Bảng này được cập nhật thường xuyên vào self.uncompleted_list
+        #               -> pieces_state_table = ['pending'] *
+        #               -> Cập nhật info_hash + remain_pieces (remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed'])
+        #               -> Tao
+        torrent_info_hash = self.get_info_hash(torrent_path)
 
+        # Parse info_has
         return
 
     def handle_user_command(self, user_command):
@@ -95,7 +120,7 @@ class Peer:
         #       -> Chia file
 
         return
-    ########################## Misc method (end) ##########################################
+    ########################## Handling method (end) ##########################################
 
     ######################## Protocol method (start) ######################################
     def connect_to_tracker(self, tracker_address):
