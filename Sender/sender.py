@@ -30,7 +30,7 @@ def send_file(dest_host, dest_port, file_path):
 
     # start sending the file
 
-    with open(filename, "rb") as f:
+    with open(file_path, "rb") as f:
         while True:
             # read the bytes from the file
             bytes_read = f.read(BUFFER_SIZE)
@@ -44,8 +44,7 @@ def send_file(dest_host, dest_port, file_path):
     s.close()
 
 dest_host = '10.0.244.129'    # 10.0.227.150
-dest_port = 3232
-file_path = "D:\Design_Specification_Template.docx"  
+dest_port = 5000
+file_path = "D:\\Design_Specification_Template.docx"
 
-#file_path = file_path.replace("\\", "/")
 send_file(dest_host,dest_port,file_path)
