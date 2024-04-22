@@ -4,6 +4,7 @@ from peer_test_define import *
 import socket
 import bencodepy
 import queue
+import hashlib
 from urllib.parse import urlparse
 #import requests
 
@@ -42,13 +43,19 @@ class Peer:
         while security_code != self.security_code:
             print("Wrong username or password. Please try again")
 
+    def hash_file_name(self, file_name):
+        file_name_bytes = file_name.encode('utf-8')
+        hashed_bytes = hashlib.sha256(file_name_bytes)
+        hashed_string = hashed_bytes.hexdigest()
+        return hashed_string.encode('utf-8')
+
     def upload_handle(self, file_path):
         # Description: Hàm sẽ xử lý việc tách file thành các pieces và lưu vào folder tương ứng, sau đó cập nhật file vào completed_list
         # Param: file_path: đường dẫn tới file cần upload
         # Todo:     -> Copy file trên vào folder pieces_folder
         #           -> Tạo 1 folder có định dạng tên là <file_name>_<file_exten> (vd: adc.pdf -> folder tên là 'abc_pdf')
         #           -> Tách file đó vào bên trong folder trên
-        #           -> Tạo ra 1 mã info_hash từ tên file (info_hash = hash(<file_name>))
+        #           -> Tạo ra 1 mã info_hash từ tên file (info_hash = self.hash_file_name(<file_name>))
         #           -> Thêm 1 dictionary gồm thông tin (pieces_path, info_hash và pieces) vào self.completed_list (Nhìn định daạng trong file TorrentList.json để hiểu rõ thêm)
         # Ví dụ về các tham số
         #                   self.upload_handle('\\hehe_folder\\myCV.pdf')
@@ -64,14 +71,18 @@ class Peer:
         #                           myCV_pdf_99.bin
         return
 
+    def download_handle(self, torrent_path):
+
+        return
+
     def handle_user_command(self, user_command):
         # Parse the user command
         command_split = user_command.split(':')
         command_type = command_split[0]
         command_param = command_split[1]
         if command_type == 'Download':
-            return
-        elif command_type == 'Uploading':
+            self.download_handle(command_param)
+        elif command_type == 'Upload':
             self.upload_handle(command_param)
         else:
             print("Wrong command format")
