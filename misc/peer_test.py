@@ -1,16 +1,12 @@
 import threading
-import shutil
 import json
-from split_to_chunk import *
-from TCP_sender import *
-from TCP_receiver import *
 from peer_test_define import *
 import socket
 import bencodepy
 import queue
 import hashlib
-
-
+import os
+from urllib.parse import urlparse
 # import requests
 
 
@@ -46,13 +42,7 @@ class Peer:
         # Username: admin
         # Password: 1
         while security_code != self.security_code:
-            print("Error: Wrong username or password. Please try again")
-            # User login
-            peer_username = input("Username: ")
-            peer_password = input("Password: ")
-            # Hash login information
-            security_code = peer_username + peer_password
-
+            print("Wrong username or password. Please try again")
 
     def hash_file_name(self, file_name):
         file_name_bytes = file_name.encode('utf-8')
@@ -80,77 +70,6 @@ class Peer:
             print(f"Error: The torrent file is invalid.")
             return False
 
-    def get_peers_list_msg(self, message):
-        # Get 'peers' key
-        peer_dict = message['peers']
-        # List of pairs (ip, port)
-        peers_list = []
-        for peer_info in peer_dict:
-            # Lấy giá trị ip và port từ mỗi phần tử
-            ip = peer_info['ip']
-            port = peer_info['port']
-            # Thêm cặp giá trị (ip, port) vào mảng mới
-            peers_list.append((ip, port))
-        return peers_list
-
-    def pre_encode_convert(self, in_dict):
-        if isinstance(in_dict, str):
-            return in_dict.encode()
-        elif isinstance(in_dict, dict):
-            return {self.pre_encode_convert(key): self.pre_encode_convert(value) for key, value in in_dict.items()}
-        elif isinstance(in_dict, list):
-            return [self.pre_encode_convert(item) for item in in_dict]
-        else:
-            return in_dict
-
-    def post_decode_convert(self, in_dict):
-        if isinstance(in_dict, bytes):
-            return in_dict.decode()
-        elif isinstance(in_dict, dict):
-            return {self.post_decode_convert(key): self.post_decode_convert(value) for key, value in in_dict.items()}
-        elif isinstance(in_dict, list):
-            return [self.post_decode_convert(item) for item in in_dict]
-        else:
-            return in_dict
-
-    def find_unused_port(self, start_port=5001, end_port=65535):
-        for port in range(start_port, end_port + 1):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                try:
-                    s.bind(('localhost', port))
-                except OSError:
-                    # Port is already in use
-                    continue
-                return port
-        raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
-
-    def handle_leecher_connection(self, receiver_socket, listen_port):
-
-        listen_socket = socket.socket()
-        listen_socket.bind(('localhost', listen_port))
-        listen_socket.listen(5)
-        while True:
-            # to do
-            break
-
-    # Searching folder function
-    def search_completed_list(self, info_hash):
-        for item in self.completed_list:
-            if item['info_hash'] == info_hash:
-                return item['pieces_path']
-        return False
-
-    # Searching id function
-    def search_chunk_file(self, folder_path, id):
-
-        files = os.listdir(folder_path)  # Get a list of all files in the folder
-
-        filename_to_search = f"abc_pdf_{id}.bin"  # Construct the filename to search for
-
-        if filename_to_search in files:  # Check if the file exists in the folder
-            return os.path.join(folder_path, filename_to_search)
-
-        return False
     ########################## Misc method (end) ##########################################
 
     ########################## Handling method (start) ##########################################
@@ -185,83 +104,6 @@ class Peer:
         #                           myCV_pdf_2.bin
         #                           .............
         #                           myCV_pdf_99.bin
-
-        # Make 'pieces folder'
-        pieces_folder = 'pieces_folder' # Save to working directory
-
-        # Check if exist or not
-        if not os.path.exists(pieces_folder):
-            os.makedirs(pieces_folder)
-
-        # Destination path =))
-        dest_path = os.path.join(pieces_folder, os.path.basename(file_path))
-
-        # Copy the file to pieces_folder
-        shutil.copyfile(file_path, dest_path)
-
-        # Get the name & exten from the path
-        base_name = os.path.basename(file_path)
-        file_name, file_exten = os.path.splitext(base_name)
-
-        # Create a new folder
-        new_folder_name = f"{file_name}_{file_exten.lstrip('.')}"
-        new_folder_path = os.path.join(pieces_folder, new_folder_name)
-
-        # Check existing
-        if not os.path.exists(new_folder_path):
-            os.makedirs(new_folder_path)
-
-        # Split file into chunks
-        chunk_size = 50 * 1024 # Just for example
-        num_chunks = file_split(dest_path, chunk_size)
-
-        # Move to THE folder
-        for i in range(num_chunks):
-            chunk_file = f"{file_name}_{file_exten}_{i}.bin"
-            shutil.move(chunk_file,new_folder_path)
-
-        # Create info_hash
-        info_hash = self.hash_file_name(file_name)
-
-        # Add new item into completed list
-        def add_to_completed(info_hash, pieces_path, pieces):
-            with open('TorrentList.json', 'r') as f:
-                data = json.load(f)
-
-            # Create the new item
-            new_item = {
-                "info_hash": info_hash,
-                "pieces_path": pieces_path,
-                "pieces": pieces
-            }
-
-            # Add the new item to the 'self.completed_list' list
-            self.completed_list.append(new_item)
-
-            # Write the data back to the file
-            with open('TorrentList.json', 'w') as f:
-                json.dump(data, f, indent=4)
-
-        ##
-        def add_to_metainfo_file(file_name, info_hash, pieces_path, pieces):
-            # Create the new item
-            new_item = {
-                "info_hash": info_hash,
-                "pieces_path": pieces_path,
-                "pieces": pieces
-            }
-
-            # Create the 'metainfo_folder' if it doesn't exist
-            if not os.path.exists('metainfo_folder'):
-                os.makedirs('metainfo_folder')
-
-            # Create the new JSON file and add the new item to it
-            with open(f'metainfo_folder/{file_name}_metainfo.json', 'w') as f:
-                json.dump(new_item, f, indent=4)
-
-        add_to_completed(info_hash, new_folder_path, num_chunks)
-        add_to_metainfo_file(file_name, info_hash, new_folder_path, num_chunks)
-
         return
 
     def download_handle(self, torrent_path):
@@ -280,7 +122,7 @@ class Peer:
         #               -> Lần lượt tạo thread (sender_handle(self, update_pieces_state_table() )) và yêu cầu nhận piece từ các seeder khác (số thread tối đa == len(peers_list)). Và đưa các pieces state về processing
         #               ................... (Còn) ........................
         #               ************* Ngoài lề (không trong method download_handle()) ********************
-        #               -> Method sender_handle() sẽ gọi hàm update_pieces_state_table() khi kết thúc việc nhận 1 piece
+        #               -> Method sender_handle() sẽ gọi hàm update_pieces_state_talble() khi kết thúc việc nhận 1 piece
         #               -> Method update_pieces_state_table(self, pass variable by reference into this method):
         #                           + Lock nhiều thread truy cập while(lock == 1): conitnue; (Tạo 1 lock cho hàm update_pieces_state_table() ở self....._lock = 0)
         #                           + Sẽ cập nhật trạng thái của pieces tiếp theo và cấp phát 1 piece mới cho thread hiện tại
@@ -296,39 +138,11 @@ class Peer:
         if self.metainfo_verification(metainfo_dict=metainfo_dict):
             return
         info_hash = metainfo_dict['info_hash']
-        pieces_num = metainfo_dict['pieces']
+        piece_num = metainfo_dict['pieces']
 
-        # Send a downloading request to the tracker (event == 'started)
-        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='started', completed_torrent=[])
-        response_dict = self.receive_response_tracker()
-        # Check the response
-        if 'status' not in response_dict:
-            print('Error: The response of tracker is invalid (the \'status\' key is not included)')
-            return
-        response_status = response_dict['status']
-        if response_status == '404':
-            print('Warning: No peer in the swarm has this file. Cancel downloading')
-            return
-        elif response_status != '202':
-            print('Error: The response of tracker is invalid (the \'status\' key is invalid)')
-            return
-        # Check and Get peer_list from response message
-        if 'peers' not in response_dict:
-            print('Error: The response of tracker is invalid (the \'peers\' key is not included)')
-            return
-        peers_list = self.get_peers_list_msg(response_dict)
+        # Send a downloading request to the tracker
 
-        # Notify to the user about the number of peers
-        print(f'Info: There are {len(peers_list)} peers that have this file in the swarm')
 
-        # Create a pieces state table
-        pieces_state_table = ['pending'] * pieces_num
-
-        # Create a remain pieces list
-        remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
-
-        # Allocate peers to all pieces (pieces_num and peers_num)
-        peers_num = len(peers_list)
 
     def handle_user_command(self, user_command):
         # Parse the user command
@@ -363,40 +177,30 @@ class Peer:
             continue
         # Lock sending message
         self.tracker_request_lock = 0
-        # Generate request
-        request = {'info_hash': info_hash, 'peer_id': peer_id, 'event': event, 'completed_torrent': completed_torrent}
-        # Pre encode request
-        request = self.pre_encode_convert(request)
         # Send a request to the tracker
-        request_encoded = bencodepy.encode(request)
-        self.client_socket.send(request_encoded)
+        request = bencodepy.encode({'info_hash': info_hash, 'peer_id': peer_id, 'event': event, 'completed_torrent': completed_torrent})
+        self.client_socket.send(request)
         # Unlock sending message to tracker
         self.tracker_request_lock = 1
 
     def receive_response_tracker(self):
-        # Description: Just receive response (not include 'keep-alive' message)
-        return self.tracker_response_queue.get()
-
-    def receive_message_tracker(self):
         # Receive the response from the tracker
         response = self.client_socket.recv(1024)
         # response_dict = bencodepy.decode(response)
         response_dict = bencodepy.decode(response)
-        # Post decode message
-        response_dict = self.post_decode_convert(response_dict)
         return response_dict
 
     def handle_response_tracker(self, response_dict):
         # Parse the response
         status_field = response_dict['status']
         if status_field == '200':
-            print("Info: Login successfully")
+            print("Login successfully")
             return 1  # TODO: Handle information
         elif status_field == '404':  # Wrong information of metainfo file
             print(response_dict['message'])
             return 0
         elif status_field == '100':  # Wrong username or password
-            print("Info: Connected")
+            print("Connected")
             return 1
 
     def handle_keep_alive_tracker(self):
@@ -429,7 +233,7 @@ class Peer:
 
     def tracker_check(self):
         while True:
-            message = self.receive_message_tracker()
+            message = self.receive_response_tracker()
             # Handle immediately (if message is a keep-alive message)
             if 'status' in message:
                 if message['status'] == '505':
@@ -455,12 +259,7 @@ class Peer:
 
         while True:
             # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
-            receiver_socket, address = leecher_handle.accept()
-            listen_port = 8080
-            thread = threading.Thread(target=self.handle_leecher_connection, args=(receiver_socket, listen_port))
-            thread.start()
             break
-
         # Handshake (receiver -> sender)
         packet = {
             "TOPIC": "DOWNLOAD REQUEST",
@@ -468,39 +267,30 @@ class Peer:
                 'type': 'Handshake',
                 'source_ip': "1:1:1:1",
                 'source_port': 5003,
-                'info_hash': b'123'
+                'info_hash': '123'
             }
         }
         # Handshake (sender -> receiver)
         # Nếu sender có file đó (check 'info_hash' xem có ko)
-        piece_path = self.search_completed_list(input_info_hash)  # DOnt know
-        if piece_path:
-            packet = {
-                "TOPIC": "UPLOADING",
-                "HEADER": {
-                    'type': 'ACK',
-                    'source_ip': "1:1:1:1",
-                    'source_port': 5000,
-                    'info_hash': b'123'
-                }
+        packet = {
+            "TOPIC": "UPLOADING",
+            "HEADER": {
+                'type': 'ACK',
+                'source_ip': "1:1:1:1",
+                'source_port': 5000,
+                'info_hash': '123'
             }
-            # If the file exist, send the file
-            needing_file = self.search_chunk_file(piece_path, id)
-
-            send_file(dest_host, dest_port, needing_file)  # Wtf is dest_host, dest_port in this
-
-            # Send noti after successfully sending file is include in the send_file func
-        else:
-            # Nếu sender ko có file đó
-            packet = {
-                "TOPIC": "UPLOADING",
-                "HEADER": {
-                    'type': 'NACK',
-                    'source_ip': "1:1:1:1",
-                    'source_port': 5000,
-                    'info_hash': b'123'
-                }
+        }
+        # Nếu sender ko có file đó
+        packet = {
+            "TOPIC": "UPLOADING",
+            "HEADER": {
+                'type': 'NACK',
+                'source_ip': "1:1:1:1",
+                'source_port': 5000,
+                'info_hash': '123'
             }
+        }
         # Todo: assign to Sy Duong
         # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
         return
@@ -510,16 +300,16 @@ class Peer:
     ######################### Flow method (start) #######################################
     def establish_connection(self):
         info_hash = ''
-        print("Info: Connecting to the tracker ......")
+        print("Connecting to the tracker ......")
         while True:
             self.send_request_tracker(info_hash, self.peer_id, 'init', self.completed_list)
-            response = self.receive_message_tracker()
+            response = self.receive_response_tracker()
             if self.handle_response_tracker(response) == 1:
                 break
 
     def start(self):
         # Load the previous param of the peer
-        self.load_param("TorrentList.json")
+        self.load_param("../TorrentList.json")
 
         # User login
         self.user_login()
@@ -537,8 +327,8 @@ class Peer:
         self.establish_connection()
 
         # Create 3 main threads -> leecher_check (another peer want to download your file)
-        #                       -> tracker_check: receive message from the tracker and store the message to queue
-        #                       -> user_check: receive user's command and store to a queue
+        #                       -> tracker_check: receive message from the tracker and store the message to stack
+        #                       -> user_check: receive user's command
         #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
         #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
         #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker

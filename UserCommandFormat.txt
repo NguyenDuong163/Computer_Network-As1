@@ -7,9 +7,9 @@
     <cmd_type>: "Download"
     <params>:   Path of the metainfo file (.bin file)
 
-    Example: The user want to download CV.pdf file from metainfo file (CV_info.bin) of CV.pdf (Path: \metainfo_folder\CV_info.bin)
+    Example: The user want to download CV.pdf file from metainfo file (CV_info.json) of CV.pdf (Path: \metainfo_folder\CV_info.bin)
     Command:
-                Download:metainfo_folder/CV_info.bin
+                Download:metainfo_folder/CV_info.json
 
 * Uploading case:
     <cmd_type>: "Upload"
