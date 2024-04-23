@@ -1,4 +1,5 @@
 import threading
+import time
 import shutil
 import json
 from split_to_chunk import *
@@ -52,7 +53,6 @@ class Peer:
             peer_password = input("Password: ")
             # Hash login information
             security_code = peer_username + peer_password
-
 
     def hash_file_name(self, file_name):
         file_name_bytes = file_name.encode('utf-8')
@@ -154,9 +154,6 @@ class Peer:
     ########################## Misc method (end) ##########################################
 
     ########################## Handling method (start) ##########################################
-    def sender_handle(self):
-        # TODO
-        return
 
     def upload_handle(self, file_path):
         # Description: Hàm sẽ xử lý việc tách file thành các pieces và lưu vào folder tương ứng, sau đó cập nhật file vào completed_list
@@ -266,7 +263,7 @@ class Peer:
 
     def download_handle(self, torrent_path):
         # Description:  Người dùng cung cấp đường dẫn đến file torrent (torrent_path) tương ứng với file cần tải
-        # Todo:         -> Lấy info_hash và pieces từ file torrent (file .json)
+        # ----:         -> Lấy info_hash và pieces từ file torrent (file .json)
         #               -> Gửi yêu cầu lên tracker server kèm theo info_hash + 'event' == 'started'
         #               -> Nhận peers_list từ Tracker server
         #               -> Tạo 1 bảng (pieces_state_table) về tiến trình của tất cả các piece của file cần tải
@@ -280,13 +277,13 @@ class Peer:
         #               -> Lần lượt tạo thread (sender_handle(self, update_pieces_state_table() )) và yêu cầu nhận piece từ các seeder khác (số thread tối đa == len(peers_list)). Và đưa các pieces state về processing
         #               ................... (Còn) ........................
         #               ************* Ngoài lề (không trong method download_handle()) ********************
-        #               -> Method sender_handle() sẽ gọi hàm update_pieces_state_table() khi kết thúc việc nhận 1 piece
-        #               -> Method update_pieces_state_table(self, pass variable by reference into this method):
-        #                           + Lock nhiều thread truy cập while(lock == 1): conitnue; (Tạo 1 lock cho hàm update_pieces_state_table() ở self....._lock = 0)
-        #                           + Sẽ cập nhật trạng thái của pieces tiếp theo và cấp phát 1 piece mới cho thread hiện tại
+        #               -> Method sender_handle(self, table) sẽ gọi cập nhật table khi kết thúc việc nhận 1 piece, việc cập nhật sẽ có các bước như sau:
+        #                           + Lock nhiều thread truy cập with lock: update; (Tạo 1 lock trước khi tạo thread)
+        #                           + Sẽ cập nhật trạng thái của pieces vừa hoàn thành và cấp phát 1 piece mới cho thread hiện tại
         #               ********************************************************************************
         #               -> Liên tục cập nhật mảng remain_pieces
         #               -> Trong hàm download_handle() sẽ liên tục check `remain_pieces` để -> while(remain_pieces is not empty): continue (chờ đến khi các pieces đã trong trạng thái completed);
+        #               -> Merge các pieces thành file
         #               -> Gửi event 'completed' đến tracker báo hiệu đã hoàn tất việc download
         ##############################################################################
 
@@ -316,7 +313,7 @@ class Peer:
         if 'peers' not in response_dict:
             print('Error: The response of tracker is invalid (the \'peers\' key is not included)')
             return
-        peers_list = self.get_peers_list_msg(response_dict)
+        peers_list = self.get_peers_list_msg(response_dict)  # [('127:0:0:1', 5000), ('127:0:0:2', 5001)]
 
         # Notify to the user about the number of peers
         print(f'Info: There are {len(peers_list)} peers that have this file in the swarm')
@@ -327,8 +324,59 @@ class Peer:
         # Create a remain pieces list
         remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
 
-        # Allocate peers to all pieces (pieces_num and peers_num)
+        #  Get pieces_num and peers_num and generate lock for multi-threading
         peers_num = len(peers_list)
+        lock_update_table = threading.Lock()
+
+        # Define sender_handle
+        def sender_handle(shared_table, info_hash, piece_id, sender_address):
+            # TODO: Download a piece from sender
+            #       Param:  + shared_table: bảng trạng thái các piece (pass by reference, automatically)
+            #               + info_hash
+            #               + piece_id: số thứ tự của piece
+            #               + sender_address: địa chỉ của sender. Vd: ('127:0:0:1', 5000)
+            #       1.  Handshake với sender (hỏi về việc sender có piece đó không)
+            #       1.1.Mở 1 socket TCP để handshake thông qua việc ping nhau
+            #       1.2.Flow:................
+            #       1.3.Nếu Sender còn file đó, tiến hành yêu cầu piece tương ưứng piece_id
+            #       2.  Nhận file
+            #       2.1.Mở 1 socket để nhận file qua FTP
+            #       2.2.Tìm port chưa được dùng để cấp phát (self.find_unused_port()) cho socket hiện tại
+            #       3.  Cập nhật pieces_state_table trong Lock   (in `with lock_update_table:`)
+            #       4.  Xin 1 piece_id mới và quay lại bước 1    (in `with lock_update_table:`)
+            #       4.1.Nếu không còn piece nào (piece_id == None) -> kết thúc thread này
+            with lock_update_table:
+                # TODO: update pieces_state_table (shared_table) here
+                return
+
+        # Allocate peers to all pieces (pieces_num and peers_num)
+        allocating_time = 0
+        while (allocating_time <= pieces_num) & (allocating_time <= peers_num):
+            sender_address = peers_list[allocating_time]
+            sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, allocating_time, sender_address))
+            sender_handle_thread.start()
+            allocating_time += 1
+
+        # Update and check pieces_state_table
+        while not remain_pieces == []:
+            # Notify to user about remain pieces
+            print(f'Info: The number of remaining pieces to download: {len(remain_pieces)} piece(s)')
+            # Update every 0.5 second
+            time.sleep(0.5)
+
+        # Notify to the user: All pieces are downloaded
+        print('Info: All pieces are downloaded')
+
+        # Merge file
+        # Todo: merge file vào đường dẫn pieces_folder/file_name
+
+        # Notify to the user
+        file_name = 'hehe'
+        print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
+
+        # Send 'completed' message to the tracker
+        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='completed', completed_torrent=[])
+
 
     def handle_user_command(self, user_command):
         # Parse the user command
@@ -445,7 +493,6 @@ class Peer:
     def user_handle(self):
         while True:
             if self.user_command_queue.qsize() > 0:
-                # Todo: Handle user command ()
                 self.handle_user_command(self.user_command_queue.get())
 
     def leecher_check(self):
@@ -473,6 +520,7 @@ class Peer:
         }
         # Handshake (sender -> receiver)
         # Nếu sender có file đó (check 'info_hash' xem có ko)
+        # input_info_hash = None
         piece_path = self.search_completed_list(input_info_hash)  # DOnt know
         if piece_path:
             packet = {
@@ -539,6 +587,7 @@ class Peer:
         # Create 3 main threads -> leecher_check (another peer want to download your file)
         #                       -> tracker_check: receive message from the tracker and store the message to queue
         #                       -> user_check: receive user's command and store to a queue
+        #                       -> user_handle: Handle the command of user
         #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
         #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
         #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker
@@ -551,6 +600,8 @@ class Peer:
         user_check_thread = threading.Thread(target=self.user_check())
         user_check_thread.start()
 
+        user_handle_thread = threading.Thread(target=self.user_handle())
+        user_handle_thread.start()
     ######################### Flow method (end) #######################################
 
 

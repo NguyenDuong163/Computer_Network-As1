@@ -34,9 +34,9 @@ def file_split(file_path: str, chunk_size: int):
     return len(chunks)  # Return the number of chunks
 
 # Ví dụ sử dụng
-if __name__ == "__main__":
-    input_file = "input136.txt"  # Full path to the file, plz use '\\' instead of '\' :( this language is shite
-    chunk_size =  50 * 1024  # Kích thước chunk mong muốn (tùy chỉnh)
-
-    num_chunks = file_split(input_file, chunk_size)
-    print(f"Number of chunks created: {num_chunks}")
+# if __name__ == "__main__":
+#     input_file = "input136.txt"  # Full path to the file, plz use '\\' instead of '\' :( this language is shite
+#     chunk_size =  50 * 1024  # Kích thước chunk mong muốn (tùy chỉnh)
+#
+#     num_chunks = file_split(input_file, chunk_size)
+#     print(f"Number of chunks created: {num_chunks}")
