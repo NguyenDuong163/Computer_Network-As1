@@ -3,7 +3,7 @@ import time
 import shutil
 import json
 from split_to_chunk import *
-from file_splitter import *
+# from file_splitter import *
 from TCP_sender import *
 from TCP_receiver import *
 # from peer_test_define import *
@@ -12,8 +12,6 @@ import bencodepy
 import queue
 import hashlib
 
-
-# import requests
 
 
 class Peer:
@@ -381,7 +379,7 @@ class Peer:
             leecher_socket.connect(sender_address)
 
             # Handshake (on Application layer)
-            self.send_message_seeder(socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
+            self.send_message_seeder(leecher_socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
                                      source_ftp_port=None, info_hash='', piece_id=None)
 
             response_seeder = self.receive_message_seeder(socket=leecher_socket)
@@ -398,7 +396,7 @@ class Peer:
                 leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(), pieces_path)
                 leecher_ftp_socket.start()
                 # Request a piece
-                self.send_message_seeder(socket=leecher_socket, mes_type='REQ', source_ip=leecher_ftp_socket.host,
+                self.send_message_seeder(leecher_socket=leecher_socket, mes_type='REQ', source_ip=leecher_ftp_socket.host,
                                          source_ftp_port=leecher_ftp_socket.port, info_hash=info_hash, piece_id=piece_id)
 
                 # Receive an ACK of piece
@@ -438,7 +436,7 @@ class Peer:
                         shared_table[piece_id] = 'processing'
                     # Nếu: Không còn piece cần tải -> Gửi 1 'FINISH' message đên seeder
                     else:
-                        self.send_message_seeder(socket=leecher_socket, mes_type='FINISH', source_ip=None,
+                        self.send_message_seeder(leecher_socket=leecher_socket, mes_type='FINISH', source_ip=None,
                                                  source_ftp_port=None, info_hash='', piece_id=None)
                         break
 
@@ -465,8 +463,7 @@ class Peer:
 
         # Merge file
         print('Info: Reassembling the file')
-        reassembler = FileSplitter(1)
-        reassembler.reassemble_file(pieces_path, '\\pieces_folder')
+        reassemble_file(pieces_path, '\\pieces_folder')
 
         # Notify to the user
         pieces_path_split = pieces_path.split('\\')
@@ -646,6 +643,95 @@ class Peer:
             if self.user_command_queue.qsize() > 0:
                 self.handle_user_command(self.user_command_queue.get())
 
+    def leecher_handle(self, receiver_socket, listen_port):
+        def send_message_leecher(receiver_socket_in, msg_type, source_ip_in=self.host, source_port_in=listen_port, info_hash_in='', piece_id_in=None):
+            packet_in = {
+                "TOPIC": "UPLOADING",
+                "HEADER": {
+                    'type': msg_type,
+                    'source_ip': source_ip_in,
+                    'source_port': source_port_in,
+                    'info_hash': info_hash_in,
+                    'piece_id': piece_id_in
+                }
+            }
+            self.send_message(receiver_socket_in, packet_in)
+
+        # Handshake (receiver -> sender)
+        packet = self.receive_message(receiver_socket)  # Get packet from receiver
+
+        if not self.message_seeder_checking(packet, 'HEADER', 'type'):
+            print('Info: the response of a seeder is invalid (-1)')
+            return
+
+        if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
+            send_message_leecher(receiver_socket, msg_type='SYNC_ACK', source_ip_in=self.host, source_port_in=listen_port)
+            # self.send_message(receiver_socket, packet)
+
+        while True:
+            # Receive REQ/FINISH message
+            packet = self.receive_message(receiver_socket)
+            # Checking
+            if not self.message_seeder_checking(packet, 'HEADER', 'type'):
+                print('Error: the response of a seeder is invalid (-2)')
+                return
+            # Get message type
+            message_type = packet['HEADER']['type']
+            if message_type == 'FINISH':
+                return
+            elif not message_type == 'REQ':
+                print('Error: the response of a seeder is invalid (-5)')
+                return
+
+            # This is a request message
+            if not self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
+                print('Error: the response of a seeder is invalid')
+                return
+            if not self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
+                print('Error: the response of a seeder is invalid')
+                return
+            dest_host_in = packet['HEADER']['source_ip']
+            dest_port_in = packet['HEADER']['source_ftp_port']
+
+            # Handshake (sender -> receiver)
+            # Nếu sender có file đó (check 'info_hash' xem có ko)
+            # input_info_hash = None
+            if not self.message_seeder_checking(packet, 'HEADER', 'info_hash'):
+                print('Error: the response of a seeder is invalid (666)')  # 666
+                return
+
+            if not self.message_seeder_checking(packet, 'HEADER', 'piece_id'):
+                print('Error: the response of a seeder is invalid (777)')  # 777
+                return
+            piece_id = packet['HEADER']['pieace_id']
+            piece_path = self.search_completed_list(packet['HEADER']['info_hash'])
+            send_successed = False
+            if piece_path:
+                print('Info: Sending a piece')
+                send_message_leecher(receiver_socket_in=receiver_socket, msg_type='ACK', source_ip_in=self.host,
+                                     source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
+                                     piece_id_in=piece_id)
+
+                # If the file exist, send the file
+
+                needing_file = self.search_chunk_file(piece_path, piece_id)
+
+                send_successed = send_file(self.host, self.find_unused_port(), dest_host_in, dest_port_in, needing_file)
+
+                # Send notify after successfully sending file is include in the send_file func
+            else:
+                # Nếu sender ko có file đó
+                send_message_leecher(receiver_socket_in=receiver_socket, msg_type='NACK', source_ip_in=self.host,
+                                     source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
+                                     piece_id_in=piece_id)
+
+            if send_successed:
+                send_message_leecher(receiver_socket_in=receiver_socket, msg_type='Completed', source_ip_in=self.host,
+                                     source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
+                                     piece_id_in=piece_id)
+                # Send this packet to Receiver
+                # Continue
+
     def leecher_check(self):
         # Allocate a unused port
         leecher_handle_thread_port = self.find_unused_port()
@@ -659,173 +745,9 @@ class Peer:
             # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
             receiver_socket, address = leecher_handle_thread.accept()
             listen_port = self.find_unused_port()
-            thread = threading.Thread(target=self.handle_leecher_connection, args=(receiver_socket, listen_port))
+            thread = threading.Thread(target=self.leecher_handle, args=(receiver_socket, listen_port))
             thread.start()
             break
-
-        # ------------------------------ Thread------------------------------
-        # Handshake (receiver -> sender)
-        packet = self.receive_message(receiver_socket)  # Get packet from receiver
-        # packet = {     # Packet from receiver
-        #     "TOPIC": "DOWNLOADING",
-        #     "HEADER": {
-        #         'type': 'SYNC',
-        #         'source_ip': "IP cua Tai",
-        #         'source_tcp_port': 5000,
-        #     }
-        # }
-        if not self.message_seeder_checking(packet, 'HEADER', 'type'):
-            print('Info: the response of a seeder is invalid')
-            return
-        if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
-            packet = {
-                "TOPIC": "UPLOADING",
-                "HEADER": {
-                    'type': 'SYNC_ACK',
-                    'source_ip': "",
-                    'source_port': listen_port,
-                }
-            }
-
-            self.send_message(receiver_socket, packet)
-
-        # Specify piece
-        packet = self.receive_message(receiver_socket)
-        if not self.message_seeder_checking(packet, 'HEADER', 'type'):
-            print('Info: the response of a seeder is invalid')
-            return
-        # packet = {
-        #     "TOPIC": "DOWNLOADING",
-        #     "HEADER": {
-        #         'type': 'REQ',
-        #         'source_ip': "Tai",
-        #         'source_tcp_port': 5000,
-        #         'info_hash': 'iuiu',
-        #         'piece_id': 8
-        #     }
-        # }
-        if not self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
-            print('Info: the response of a seeder is invalid')
-            return
-        if not self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
-            print('Info: the response of a seeder is invalid')
-            return
-        dest_host = packet['HEADER']['source_ip']
-        dest_port = packet['HEADER']['source_ftp_port']
-
-        # Handshake (sender -> receiver)
-        # Nếu sender có file đó (check 'info_hash' xem có ko)
-        # input_info_hash = None
-        piece_path = self.search_completed_list(packet['HEADER']['info_hash'])
-        if piece_path:
-            packet = {
-                "TOPIC": "UPLOADING",
-                "HEADER": {
-                    'type': 'ACK',
-                    'source_ip': "me",
-                    'source_port': 5000,
-                    'info_hash': 'iuiu',
-                    'piece_id': 8
-                }
-            }
-            self.send_message(receiver_socket, packet)
-            # If the file exist, send the file
-
-            needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])
-
-            send_successed = send_file(self.host, self.find_unused_port(), dest_host, dest_port, needing_file)
-
-            # Send noti after successfully sending file is include in the send_file func
-        else:
-            # Nếu sender ko có file đó
-            packet = {
-                "TOPIC": "UPLOADING",
-                "HEADER": {
-                    'type': 'NACK',
-                    'source_ip': "1:1:1:1",
-                    'source_port': 5000,
-                    'info_hash': 'iuiu',
-                    'piece_id': 8
-                }
-            }
-            self.send_message(receiver_socket, packet)
-        # Todo: assign to Sy Duong
-        # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
-
-        while True:
-            if send_successed:
-                packet = {
-                    "TOPIC": "UPLOADING",
-                    "HEADER": {
-                        'type': 'Completed',
-                        'source_ip': "IP cua Sy Duong",
-                        'source_ftp_port': 5000,
-                        'info_hash': 'iuiu',
-                        'piece_id': 8
-                    }
-                }
-                self.send_message(receiver_socket, packet)
-
-                # Send this packet to Receiver
-                # ........ Wait for receiver's message
-
-                packet = self.receive_message(receiver_socket)  # Download requirement packet
-
-                # packet = {
-                #     "TOPIC": "DOWNLOADING",
-                #     "HEADER": {
-                #         'type': 'REQ',
-                #         'source_ip': "IP cua Tai",
-                #         'source_tcp_port': 5000,
-                #         'info_hash': 'iuiu',
-                #         'piece_id': 9
-                #     }
-                # }
-                # D0n't know 4 sure
-
-                if self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
-                    dest_host = packet['HEADER']['source_ip']
-                else:
-                    print('Info: the response of a seeder is invalid (0)')
-                    return
-
-                if self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
-                    dest_port = packet['HEADER']['source_ftp_port']
-                else:
-                    print('Info: the response of a seeder is invalid (1)')
-                    return
-
-                if self.message_seeder_checking(packet, 'HEADER', 'info_hash'):
-                    piece_path = self.search_completed_list(packet['HEADER']['info_hash'])  # Find piece path
-                else:
-                    print('Info: the response of a seeder is invalid (2)')
-                    return
-
-                if self.message_seeder_checking(packet, 'HEADER', 'piece_id'):
-                    needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])  # File desired file
-                else:
-                    print('Info: the response of a seeder is invalid (3)')
-                    return
-
-                send_successed = send_file(self.host, self.find_unused_port(), dest_host, dest_port,
-                                           needing_file)  # Send the fuccing file
-
-                if send_successed:
-                    packet = {  # Finish packet
-                        "TOPIC": "DOWNLOADING",
-                        "HEADER": {
-                            'type': 'FINISH',
-                            'source_ip': "IP cua Tai",
-                            'source_tcp_port': 5000
-                        }
-                    }
-
-                    self.send_message(receiver_socket, packet)
-                if (packet['HEADER']['type']) == 'FINISH':
-                    break
-
-        return
-
 
     ######################### Thread method (end) #######################################
 
