@@ -49,10 +49,10 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
     s.close()
     return True
 
-dest_host = "192.168.150.117"    # 10.0.227.150 # ip cua may dich
-dest_port = 5000
-file_path = "input136.txt"
-source_host = "192.168.150.104" #ip cua may
-source_port = 5000
-
-a = send_file(source_host, source_port, dest_host,dest_port,file_path)
+# dest_host = "192.168.150.117"    # 10.0.227.150 # ip cua may dich
+# dest_port = 5000
+# file_path = "input136.txt"
+# source_host = "192.168.150.104" #ip cua may
+# source_port = 5000
+#
+# a = send_file(source_host, source_port, dest_host,dest_port,file_path)

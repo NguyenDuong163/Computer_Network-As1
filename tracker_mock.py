@@ -3,7 +3,7 @@ import socket
 import threading
 import bencodepy
 import time
-import pandas as pd
+# import pandas as pd
 
 class TrackerServer:
     def __init__(self, host, port):
@@ -37,6 +37,7 @@ class TrackerServer:
 
     def handle_client(self, client_socket, client_address):
         data = client_socket.recv(1024)
+
         if data:
             # Decode the data
             request = bencodepy.decode(data)

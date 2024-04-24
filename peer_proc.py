@@ -2,7 +2,7 @@ import threading
 import time
 import shutil
 import json
-from split_to_chunk import *
+from file_splitter import *
 # from file_splitter import *
 from TCP_sender import *
 from TCP_receiver import *
@@ -12,14 +12,13 @@ import bencodepy
 import queue
 import hashlib
 
-
-
 class Peer:
     def __init__(self, host, port):
         self.host = host
         self.port = port
         self.seeder_host = host
         self.seeder_port = None
+        self.seeder_socket = None
         self.peer_id = 0
         self.completed_list = []
         self.uncompleted_list = []
@@ -476,15 +475,23 @@ class Peer:
 
     def handle_user_command(self, user_command):
         # Parse the user command
+        if ':' not in user_command:
+            print('Error: The command is invalid (\':\')')
+            return
         command_split = user_command.split(':')
+        if not len(command_split) == 2:
+            print('Error: The command is invalid (\'wrong format\')')
+            return
         command_type = command_split[0]
         command_param = command_split[1]
         if command_type == 'Download':
+            print('Info: Handling the downloading command')
             self.download_handle(command_param)
         elif command_type == 'Upload':
+            print('Info: Handling the uploading command')
             self.upload_handle(command_param)
         else:
-            print("Error: Wrong command format")
+            print("Error: Wrong command format (command type)")
         # if type of the command is Uploading
         #       upload_handle():
         #       -> Copy file vào pieces_folder
@@ -500,6 +507,14 @@ class Peer:
     def connect_to_tracker(self, tracker_address):
         # Connect to the tracker server
         self.client_socket.connect(tracker_address)
+
+    def seeder_init(self):
+        # Allocate a unused port
+        leecher_handle_thread_port = self.find_unused_port()
+        self.seeder_port = leecher_handle_thread_port
+        # Create a socket
+        self.seeder_socket = socket.socket()
+        self.seeder_socket.bind((self.seeder_host, leecher_handle_thread_port))
 
     def send_request_tracker(self, info_hash, peer_id, event, completed_torrent):
         # Wait until sender is released
@@ -528,7 +543,6 @@ class Peer:
 
         # Pre encode request
         request = self.pre_encode_convert(request)
-
         # Send a request to the tracker
         request_encoded = bencodepy.encode(request)
         self.client_socket.send(request_encoded)
@@ -635,6 +649,7 @@ class Peer:
 
     def user_check(self):
         while True:
+            time.sleep(0.2)
             user_command = input("User command-line: ")
             self.user_command_queue.put(user_command)
 
@@ -733,22 +748,14 @@ class Peer:
                 # Continue
 
     def leecher_check(self):
-        # Allocate a unused port
-        leecher_handle_thread_port = self.find_unused_port()
-        self.seeder_port = leecher_handle_thread_port
-        # Create a socket
-        leecher_handle_thread = socket.socket()
-        leecher_handle_thread.bind((self.seeder_host, leecher_handle_thread_port))
-        leecher_handle_thread.listen(5)
-
+        self.seeder_socket.listen(5)
         while True:
             # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
-            receiver_socket, address = leecher_handle_thread.accept()
+            receiver_socket, address = self.seeder_socket.accept()
             listen_port = self.find_unused_port()
             thread = threading.Thread(target=self.leecher_handle, args=(receiver_socket, listen_port))
             thread.start()
             break
-
     ######################### Thread method (end) #######################################
 
     ######################### Flow method (start) #######################################
@@ -774,6 +781,9 @@ class Peer:
         # Bind the socket to address and port
         self.client_socket.bind((self.host, self.port))
 
+        # Create a seeder socket
+        self.seeder_init()
+
         # Establish connection (Transport layer handshake)
         self.connect_to_tracker(self.tracker_address)
 
@@ -787,20 +797,33 @@ class Peer:
         #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
         #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
         #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker
-        leecher_check_thread = threading.Thread(target=self.leecher_check())
+        leecher_check_thread = threading.Thread(target=self.leecher_check)
         leecher_check_thread.start()
 
-        tracker_check_thread = threading.Thread(target=self.tracker_check())
+        tracker_check_thread = threading.Thread(target=self.tracker_check)
         tracker_check_thread.start()
 
-        user_check_thread = threading.Thread(target=self.user_check())
+        user_check_thread = threading.Thread(target=self.user_check)
         user_check_thread.start()
 
-        user_handle_thread = threading.Thread(target=self.user_handle())
+        user_handle_thread = threading.Thread(target=self.user_handle)
         user_handle_thread.start()
     ######################### Flow method (end) #######################################
 
 
+
+def find_unused_port(start_port=5003, end_port=65535):
+    for port in range(start_port, end_port + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('localhost', port))
+            except OSError:
+                # Port is already in use
+                continue
+            return port
+    raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
+
+
 if __name__ == '__main__':
-    peer = Peer('localhost', 5002)
+    peer = Peer('localhost', find_unused_port())
     peer.start()

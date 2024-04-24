@@ -1,15 +1,13 @@
-# Tracker define
-TRACKER_URL = "www.example.com:6000"
+import socket
 
-# Peer define
-PEER_DEFAULT_HOST = ""
-PEER_DEFAULT_PORT = 5000
 
-# Packet Dictionary
-TOPIC_KEY = "Topic"
-HEADER_KEY = "Header"
-BODY_KEY = "Body"
-
-PEER_HOST_KEY = "Peer host"
-PEER_PORT_KEY = "Peer port"
-FILE_NAME_KEY = "File name"
+def find_unused_port(start_port=5003, end_port=65535):
+    for port in range(start_port, end_port + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('localhost', port))
+            except OSError:
+                # Port is already in use
+                continue
+            return port
+    raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
