@@ -501,21 +501,33 @@ class Peer:
         # Wait until sender is released
         while self.tracker_request_lock == 1:
             continue
+
         # Lock sending message
         self.tracker_request_lock = 0
 
-        request = {
-
-        }
         # Generate request
-        request = {'info_hash': info_hash, 'peer_id': peer_id, 'event': event, 'completed_torrent': completed_torrent}
+        request = {
+            'TOPIC': 'TORRENT',
+            'HEADER': {
+                'event': event,
+                'source_host': self.host,
+                'source_port': self.port,
+                'seeder_host': self.seeder_host,
+                'seeder_port': self.seeder_port
+            },
+            'BODY': {
+                'peer_id': peer_id,
+                'info_hash': info_hash,
+                'completed_list': completed_torrent
+            }
+        }
+
         # Pre encode request
         request = self.pre_encode_convert(request)
+
         # Send a request to the tracker
         request_encoded = bencodepy.encode(request)
         self.client_socket.send(request_encoded)
-
-
 
         # Unlock sending message to tracker
         self.tracker_request_lock = 1
@@ -604,10 +616,11 @@ class Peer:
         while True:
             message = self.receive_message_tracker()
             # Handle immediately (if message is a keep-alive message)
-            if 'status' in message:
-                if message['status'] == '505':
-                    self.handle_keep_alive_tracker()
-                    return
+            if 'HEADER' in message:
+                if 'status' in message['HEADER']:
+                    if message['status'] == '505':
+                        self.handle_keep_alive_tracker()
+                        return
             self.tracker_response_queue.put(message)
 
     def user_check(self):
@@ -787,7 +800,6 @@ class Peer:
     ######################### Thread method (end) #######################################
 
     ######################### Flow method (start) #######################################
-
     def establish_connection(self):
         info_hash = ''
         print("Info: Connecting to the tracker ......")

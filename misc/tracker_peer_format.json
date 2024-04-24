@@ -143,16 +143,15 @@
     "HEADER": {
       "event": "",
       "status": "505",
-      "source_host": "127:0:0:1",
+      "source_host": " 127:0:0:1",
       "source_port": 5000
     },
     "BODY": {}
   },
-  "response of keep-alive message from TRACKER": {
+  "response of keep-alive message from PEER": {
     "TOPIC": "TORRENT",
     "HEADER": {
       "event": "CHECK_RESPONSE",
-      "status": "505",
       "source_host": "127:0:0:1",
       "source_port": 5000,
       "seeder_host": "127:0:0:1",
