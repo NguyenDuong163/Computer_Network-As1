@@ -5,7 +5,7 @@ import json
 from split_to_chunk import *
 from TCP_sender import *
 from TCP_receiver import *
-from peer_test_define import *
+# from peer_test_define import *
 import socket
 import bencodepy
 import queue
@@ -336,7 +336,7 @@ class Peer:
             #               + piece_id: số thứ tự của piece
             #               + sender_address: địa chỉ của sender. Vd: ('127:0:0:1', 5000)
             #       1.  Handshake với sender (hỏi về việc sender có piece đó không)
-            #       1.1.Mở 1 socket TCP để handshake thông qua việc ping nhau
+            #       1.1.Mở 1 socket để handshake thông qua việc ping nhau bằng TCP
             #       1.2.Flow:................
             #       1.3.Nếu Sender còn file đó, tiến hành yêu cầu piece tương ưứng piece_id
             #       2.  Nhận file
@@ -345,6 +345,7 @@ class Peer:
             #       3.  Cập nhật pieces_state_table trong Lock   (in `with lock_update_table:`)
             #       4.  Xin 1 piece_id mới và quay lại bước 1    (in `with lock_update_table:`)
             #       4.1.Nếu không còn piece nào (piece_id == None) -> kết thúc thread này
+
             with lock_update_table:
                 # TODO: update pieces_state_table (shared_table) here
                 return
@@ -508,28 +509,51 @@ class Peer:
             thread.start()
             break
 
+        # ------------------------ Thread -----------------------------------------------------------------
+
         # Handshake (receiver -> sender)
-        packet = {
-            "TOPIC": "DOWNLOAD REQUEST",
+        packet_from_Tai = {
+            "TOPIC": "DOWNLOADING",
             "HEADER": {
-                'type': 'Handshake',
-                'source_ip': "1:1:1:1",
-                'source_port': 5003,
-                'info_hash': b'123'
+                'type': 'SYNC',
+                'source_ip': "IP cua Tai",
+                'source_tcp_port': 5000,
+            }
+        }
+
+        packet_from_SyDuong = {
+            "TOPIC": "UPLOADING",
+            "HEADER": {
+                'type': 'SYNC_ACK',
+                'source_ip': "",
+                'source_port': listten_port,
+            }
+        }
+
+        # Specify piece
+        packet_from_Tai = {
+            "TOPIC": "DOWNLOADING",
+            "HEADER": {
+                'type': 'REQ',
+                'source_ip': "IP cua Tai",
+                'source_tcp_port': 5000,
+                'info_hash': 'iuiu',
+                'piece_id': 8
             }
         }
         # Handshake (sender -> receiver)
         # Nếu sender có file đó (check 'info_hash' xem có ko)
-        # input_info_hash = None
+        input_info_hash = None
         piece_path = self.search_completed_list(input_info_hash)  # DOnt know
         if piece_path:
             packet = {
                 "TOPIC": "UPLOADING",
                 "HEADER": {
                     'type': 'ACK',
-                    'source_ip': "1:1:1:1",
-                    'source_port': 5000,
-                    'info_hash': b'123'
+                    'source_ip': "IP cua Sy Duong",
+                    'source_tcp_port': 5000,
+                    'info_hash': 'iuiu',
+                    'piece_id': 8
                 }
             }
             # If the file exist, send the file
@@ -544,14 +568,61 @@ class Peer:
                 "TOPIC": "UPLOADING",
                 "HEADER": {
                     'type': 'NACK',
-                    'source_ip': "1:1:1:1",
-                    'source_port': 5000,
-                    'info_hash': b'123'
+                    'source_ip': "IP cua Sy Duong",
+                    'source_tcp_port': 5000,
+                    'info_hash': 'iuiu',
+                    'piece_id': 8
                 }
             }
         # Todo: assign to Sy Duong
         # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
+
+        while True:
+            if('the piece is sent'):
+                packet_from_SyDuong = {
+                    "TOPIC": "UPLOADING",
+                    "HEADER": {
+                        'type': 'Completed',
+                        'source_ip': "IP cua Sy Duong",
+                        'source_tcp_port': 5000,
+                        'info_hash': 'iuiu',
+                        'piece_id': 8
+                    }
+                }
+                # Gưi packet này đến Receiver
+                # ....... Đợi nhận message từ receiver
+
+                packet_from_Tai_req = {
+                    "TOPIC": "DOWNLOADING",
+                    "HEADER": {
+                        'type': 'REQ',
+                        'source_ip': "IP cua Tai",
+                        'source_tcp_port': 5000,
+                        'info_hash': 'iuiu',
+                        'piece_id': 9
+                    }
+                }
+                packet_from_Tai_finish = {
+                    "TOPIC": "DOWNLOADING",
+                    "HEADER": {
+                        'type': 'FINISH',
+                        'source_ip': "IP cua Tai",
+                        'source_tcp_port': 5000
+                    }
+                }
+                if (packet_from_Tai_finish['type'] == 'FINISH'):
+                    break
+
+                # send()
+
+
+
+
+
+
+
         return
+
 
     ######################### Thread method (end) #######################################
 

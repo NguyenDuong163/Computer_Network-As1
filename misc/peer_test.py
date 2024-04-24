@@ -267,7 +267,7 @@ class Peer:
                 'type': 'Handshake',
                 'source_ip': "1:1:1:1",
                 'source_port': 5003,
-                'info_hash': '123'
+                'info_hash': 'fdjasodfjoewi0f'
             }
         }
         # Handshake (sender -> receiver)
