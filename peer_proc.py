@@ -380,7 +380,7 @@ class Peer:
 
             response_seeder = self.receive_message_seeder(socket=leecher_socket)
             # Response checking
-            if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
+            if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                 return
 
             if not response_seeder["HEADER"]['type'] == 'SYNC_ACK':
@@ -399,7 +399,7 @@ class Peer:
                 response_seeder = self.receive_message_seeder(socket=leecher_socket)
 
                 # Response checking
-                if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
+                if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                     return
                 if response_seeder["HEADER"]['type'] == 'NACK':
                     print('Warning: Can not find out the piece. Close connection with the seeder')
@@ -410,7 +410,7 @@ class Peer:
 
                 # Receive completed message of seeder
                 response_seeder = self.receive_message_seeder(socket=leecher_socket)
-                if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
+                if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                     return
                 # Response checking
                 if not response_seeder["HEADER"]['type'] == 'Completed':
@@ -621,13 +621,17 @@ class Peer:
                 self.handle_user_command(self.user_command_queue.get())
 
     def leecher_check(self):
-        leecher_handle = socket.socket()
-        leecher_handle.bind(('localhost', 5003))
-        leecher_handle.listen(5)
+        # Allocate a unused port
+        leecher_handle_thread_port = self.find_unused_port()
+        self.seeder_port = leecher_handle_thread_port
+        # Create a socket
+        leecher_handle_thread = socket.socket()
+        leecher_handle_thread.bind((self.seeder_host, leecher_handle_thread_port))
+        leecher_handle_thread.listen(5)
 
         while True:
             # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
-            receiver_socket, address = leecher_handle.accept()
+            receiver_socket, address = leecher_handle_thread.accept()
             listen_port = self.find_unused_port()
             thread = threading.Thread(target=self.handle_leecher_connection, args=(receiver_socket, listen_port))
             thread.start()
@@ -644,9 +648,10 @@ class Peer:
         #         'source_tcp_port': 5000,
         #     }
         # }
-
+        if not self.message_seeder_checking(packet, 'HEADER', 'type'):
+            print('Info: the response of a seeder is invalid')
+            return
         if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
-
             packet = {
                 "TOPIC": "UPLOADING",
                 "HEADER": {
@@ -660,7 +665,9 @@ class Peer:
 
         # Specify piece
         packet = self.receive_message(receiver_socket)
-
+        if not self.message_seeder_checking(packet, 'HEADER', 'type'):
+            print('Info: the response of a seeder is invalid')
+            return
         # packet = {
         #     "TOPIC": "DOWNLOADING",
         #     "HEADER": {
@@ -671,8 +678,14 @@ class Peer:
         #         'piece_id': 8
         #     }
         # }
+        if not self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
+            print('Info: the response of a seeder is invalid')
+            return
+        if not self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
+            print('Info: the response of a seeder is invalid')
+            return
         dest_host = packet['HEADER']['source_ip']
-        dest_port = packet['HEADER']['source_tcp_port']
+        dest_port = packet['HEADER']['source_ftp_port']
 
         # Handshake (sender -> receiver)
         # Nếu sender có file đó (check 'info_hash' xem có ko)
@@ -720,7 +733,7 @@ class Peer:
                     "HEADER": {
                         'type': 'Completed',
                         'source_ip': "IP cua Sy Duong",
-                        'source_tcp_port': 5000,
+                        'source_ftp_port': 5000,
                         'info_hash': 'iuiu',
                         'piece_id': 8
                     }
@@ -745,7 +758,7 @@ class Peer:
 
                 # D0n't know 4 sure
                 dest_host = packet['HEADER']['source_ip']
-                dest_port = packet['HEADER']['source_tcp_port']
+                dest_port = packet['HEADER']['source_ftp_port']
 
                 piece_path = self.search_completed_list(packet['HEADER']['info_hash'])  # Find piece path
 
