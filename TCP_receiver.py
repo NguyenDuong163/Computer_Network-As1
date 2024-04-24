@@ -3,13 +3,14 @@ import tqdm
 import os
 
 
-class TCPReceiver:
+class FTPReceiver:
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096  # receive 4096 bytes each time
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, directory):
         self.host = host
         self.port = port
+        self.directory = directory
         self.server_socket = socket.socket()  # TCP socket
         self.server_socket.bind((self.host, self.port))
 
@@ -23,7 +24,14 @@ class TCPReceiver:
         received = self.client_socket.recv(self.BUFFER_SIZE).decode()
         filename, filesize = received.split(self.SEPARATOR)
         filename = os.path.basename(filename)  # remove absolute path if there is
-        filesize = int(filesize)  # convert to integer
+
+        # create the directory if it does not exist
+        os.makedirs(self.directory, exist_ok=True)
+
+        # add the directory path to the filename
+        filename = os.path.join(self.directory, filename)
+
+        #filesize = int(filesize)  # convert to integer
 
         with open(filename, "wb") as f:
             while True:
@@ -37,8 +45,10 @@ class TCPReceiver:
         self.server_socket.close()
 
 
+
 # usage
-# server = TCPReceiver("10.0.244.129", 5000)
+# path = "E:\\OneDrive - VNU-HCMUS\\Desktop\\test"
+# server = FTPReceiver('192.168.150.117', 5000, path)
 # server.start()
 # server.receive_file()
 # server.close_connection()

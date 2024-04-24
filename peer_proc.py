@@ -3,6 +3,7 @@ import time
 import shutil
 import json
 from split_to_chunk import *
+from file_splitter import *
 from TCP_sender import *
 from TCP_receiver import *
 # from peer_test_define import *
@@ -19,6 +20,8 @@ class Peer:
     def __init__(self, host, port):
         self.host = host
         self.port = port
+        self.seeder_host = host
+        self.seeder_port = None
         self.peer_id = 0
         self.completed_list = []
         self.uncompleted_list = []
@@ -73,10 +76,17 @@ class Peer:
     def metainfo_verification(self, metainfo_dict):
         info_hash_key = 'info_hash'
         pieces_num_key = 'pieces'
+        pieces_path_key = 'pieces_path'
         if not isinstance(metainfo_dict, dict):
             print(f"Error: The torrent file is invalid.")
             return False
         if info_hash_key not in metainfo_dict:
+            print(f"Error: The torrent file is invalid.")
+            return False
+        if pieces_num_key not in metainfo_dict:
+            print(f"Error: The torrent file is invalid.")
+            return False
+        if pieces_path_key not in metainfo_dict:
             print(f"Error: The torrent file is invalid.")
             return False
 
@@ -151,6 +161,15 @@ class Peer:
             return os.path.join(folder_path, filename_to_search)
 
         return False
+
+    def message_seeder_checking(self, response_seeder, key, key_of_key):
+        if key not in response_seeder:
+            print("Error: The message of seeder is invalid")
+            return 0
+        if key_of_key not in response_seeder["HEADER"]:
+            print("Error: The message of seeder is invalid")
+            return 0
+        return 1
     ########################## Misc method (end) ##########################################
 
     ########################## Handling method (start) ##########################################
@@ -294,6 +313,7 @@ class Peer:
             return
         info_hash = metainfo_dict['info_hash']
         pieces_num = metainfo_dict['pieces']
+        pieces_path = metainfo_dict['pieces_path']
 
         # Send a downloading request to the tracker (event == 'started)
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='started', completed_torrent=[])
@@ -318,43 +338,112 @@ class Peer:
         # Notify to the user about the number of peers
         print(f'Info: There are {len(peers_list)} peers that have this file in the swarm')
 
-        # Create a pieces state table
-        pieces_state_table = ['pending'] * pieces_num
-
-        # Create a remain pieces list
-        remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
-
         #  Get pieces_num and peers_num and generate lock for multi-threading
         peers_num = len(peers_list)
         lock_update_table = threading.Lock()
 
+        # Create a pieces state table (cấp phát trước các piece và chuyển trạng thái thành processing)
+        pieces_state_table = (['processing'] * min(pieces_num, peers_num)) + (['pending'] * max(0, pieces_num - peers_num))
+
         # Define sender_handle
-        def sender_handle(shared_table, info_hash, piece_id, sender_address):
-            # TODO: Download a piece from sender
+        def sender_handle(shared_table, info_hash, piece_id, pieces_path, sender_address):
+            # ----: Download a piece from sender
             #       Param:  + shared_table: bảng trạng thái các piece (pass by reference, automatically)
             #               + info_hash
             #               + piece_id: số thứ tự của piece
             #               + sender_address: địa chỉ của sender. Vd: ('127:0:0:1', 5000)
+            #       0.  Tự cấp phát 1 socket và kết nối đên sender_address
             #       1.  Handshake với sender (hỏi về việc sender có piece đó không)
-            #       1.1.Mở 1 socket để handshake thông qua việc ping nhau bằng TCP
-            #       1.2.Flow:................
-            #       1.3.Nếu Sender còn file đó, tiến hành yêu cầu piece tương ưứng piece_id
-            #       2.  Nhận file
-            #       2.1.Mở 1 socket để nhận file qua FTP
-            #       2.2.Tìm port chưa được dùng để cấp phát (self.find_unused_port()) cho socket hiện tại
+            #       2.  Mở 1 socket để handshake thông qua việc ping nhau bằng TCP
+            #       3.  Mở 1 socket để nhận file qua FTP. Tìm port chưa được dùng để cấp phát (self.find_unused_port()) cho socket hiện tại
+            #       5.  Handshake thông qua Peers Protocol (SYNC - SYNC_ACK)
+            #           Response to SYNC (SYNC_ACK)
+            #       6.  Request 1 piece from seeder
+            #       7.  if (Seeder NACK) -> Return
+            #           else -> continue
+            #       2.  Nhận file thông qua FTP socket
+            #       9.  Nhận 1 message thông qua Peers Protocol socket ('type == Completed')
             #       3.  Cập nhật pieces_state_table trong Lock   (in `with lock_update_table:`)
             #       4.  Xin 1 piece_id mới và quay lại bước 1    (in `with lock_update_table:`)
             #       4.1.Nếu không còn piece nào (piece_id == None) -> kết thúc thread này
+            ##########################################
+            # Create a socket for Peers Protocol
+            leecher_socket = socket.socket()
+            # Bind the socket to address 
+            leecher_socket.bind((self.host, self.find_unused_port()))
+            # Establish connection
+            leecher_socket.connect(sender_address)
 
-            with lock_update_table:
-                # TODO: update pieces_state_table (shared_table) here
+            # Handshake (on Application layer)
+            self.send_message_seeder(socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
+                                     source_ftp_port=None, info_hash='', piece_id=None)
+
+            response_seeder = self.receive_message_seeder(socket=leecher_socket)
+            # Response checking
+            if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                 return
+
+            if not response_seeder["HEADER"]['type'] == 'SYNC_ACK':
+                print('Warning: Can not handshake with a seeder. Close connection with the seeder')
+                return
+
+            while True:
+                # Create a socket for FTP
+                leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(), pieces_path)
+                leecher_ftp_socket.start()
+                # Request a piece
+                self.send_message_seeder(socket=leecher_socket, mes_type='REQ', source_ip=leecher_ftp_socket.host,
+                                         source_ftp_port=leecher_ftp_socket.port, info_hash=info_hash, piece_id=piece_id)
+
+                # Receive an ACK of piece
+                response_seeder = self.receive_message_seeder(socket=leecher_socket)
+
+                # Response checking
+                if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
+                    return
+                if response_seeder["HEADER"]['type'] == 'NACK':
+                    print('Warning: Can not find out the piece. Close connection with the seeder')
+                    return
+
+                # Receive the file (until completed)
+                leecher_ftp_socket.receive_file()
+
+                # Receive completed message of seeder
+                response_seeder = self.receive_message_seeder(socket=leecher_socket)
+                if self.message_seeder_checking(response_seeder, "HEADER", 'type'):
+                    return
+                # Response checking
+                if not response_seeder["HEADER"]['type'] == 'Completed':
+                    print('Warning: Can not download a piece from the seeder. Close connection with the seeder')
+                    return
+
+                # Locking access to shared_table (collision -> data hazard)
+                with lock_update_table:
+                    # ----: update pieces_state_table (shared_table) here
+                    #       1. Chuyển trạng thái piece vừa hoàn thành thành 'completed'
+                    #       2. Tìm kiếm trong table xem còn piece nào đang trong trạng thái pending không
+                    #       3. Nếu còn  then: -> chuyển piece_id = new_piece_id
+                    #                         -> chuyển trạng thái piece đó thành 'processing'
+                    #                   else: -> gửi 1 'FINISH' message đến seeder
+                    shared_table[piece_id] = 'completed'
+                    # Nếu: Vẫn còn piece chưa được tiến hành tải
+                    if 'pending' in shared_table:
+                        piece_id = shared_table.index('pending')
+                        shared_table[piece_id] = 'processing'
+                    # Nếu: Không còn piece cần tải -> Gửi 1 'FINISH' message đên seeder
+                    else:
+                        self.send_message_seeder(socket=leecher_socket, mes_type='FINISH', source_ip=None,
+                                                 source_ftp_port=None, info_hash='', piece_id=None)
+                        break
+
+        # Create a remain pieces list
+        remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
 
         # Allocate peers to all pieces (pieces_num and peers_num)
         allocating_time = 0
         while (allocating_time <= pieces_num) & (allocating_time <= peers_num):
             sender_address = peers_list[allocating_time]
-            sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, allocating_time, sender_address))
+            sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, allocating_time, pieces_path, sender_address))
             sender_handle_thread.start()
             allocating_time += 1
 
@@ -370,9 +459,11 @@ class Peer:
 
         # Merge file
         # Todo: merge file vào đường dẫn pieces_folder/file_name
+        reassembler = FileSplitter(1)
+        reassembler.reassemble_file(pieces_path, '\\pieces_folder')
 
         # Notify to the user
-        file_name = 'hehe'
+        file_name = pieces_path.split('\\')[1]
         print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
 
         # Send 'completed' message to the tracker
@@ -412,6 +503,10 @@ class Peer:
             continue
         # Lock sending message
         self.tracker_request_lock = 0
+
+        request = {
+
+        }
         # Generate request
         request = {'info_hash': info_hash, 'peer_id': peer_id, 'event': event, 'completed_torrent': completed_torrent}
         # Pre encode request
@@ -419,6 +514,9 @@ class Peer:
         # Send a request to the tracker
         request_encoded = bencodepy.encode(request)
         self.client_socket.send(request_encoded)
+
+
+
         # Unlock sending message to tracker
         self.tracker_request_lock = 1
 
@@ -434,6 +532,32 @@ class Peer:
         # Post decode message
         response_dict = self.post_decode_convert(response_dict)
         return response_dict
+
+    def send_message_seeder(self, leecher_socket, mes_type, source_ip, source_ftp_port, info_hash, piece_id):
+        message_seeder = {
+            "TOPIC": "DOWNLOADING",
+            "HEADER": {
+                'type': mes_type,
+                'source_ip': source_ip,
+                'source_ftp_port': source_ftp_port,
+                'info_hash': info_hash,
+                'piece_id': piece_id
+            }
+        }
+        leecher_socket.send(message_seeder)
+
+    def receive_message_seeder(self, socket):
+        message = socket.recv(1024)
+        return message
+
+    def receive_message(self, conn):
+        data = conn.recv(1024)
+        message = json.loads(data.decode())
+        return message
+
+    def send_message(self, conn, message):
+        data = json.dumps(message).encode()  # dump dict to str, then encode str to bytes
+        conn.sendall(data)
 
     def handle_response_tracker(self, response_dict):
         # Parse the response
@@ -504,62 +628,73 @@ class Peer:
         while True:
             # Tạo 1 thread khi có 1 leecher kết nối đến và thread đó handle phần giao tiếp
             receiver_socket, address = leecher_handle.accept()
-            listen_port = 8080
+            listen_port = self.find_unused_port()
             thread = threading.Thread(target=self.handle_leecher_connection, args=(receiver_socket, listen_port))
             thread.start()
             break
 
-        # ------------------------ Thread -----------------------------------------------------------------
-
+        # ------------------------------ Thread------------------------------
         # Handshake (receiver -> sender)
-        packet_from_Tai = {
-            "TOPIC": "DOWNLOADING",
-            "HEADER": {
-                'type': 'SYNC',
-                'source_ip': "IP cua Tai",
-                'source_tcp_port': 5000,
-            }
-        }
+        packet = self.receive_message(receiver_socket)  # Get packet from receiver
+        # packet = {     # Packet from receiver
+        #     "TOPIC": "DOWNLOADING",
+        #     "HEADER": {
+        #         'type': 'SYNC',
+        #         'source_ip': "IP cua Tai",
+        #         'source_tcp_port': 5000,
+        #     }
+        # }
 
-        packet_from_SyDuong = {
-            "TOPIC": "UPLOADING",
-            "HEADER": {
-                'type': 'SYNC_ACK',
-                'source_ip': "",
-                'source_port': listten_port,
+        if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
+
+            packet = {
+                "TOPIC": "UPLOADING",
+                "HEADER": {
+                    'type': 'SYNC_ACK',
+                    'source_ip': "",
+                    'source_port': listen_port,
+                }
             }
-        }
+
+            self.send_message(receiver_socket, packet)
 
         # Specify piece
-        packet_from_Tai = {
-            "TOPIC": "DOWNLOADING",
-            "HEADER": {
-                'type': 'REQ',
-                'source_ip': "IP cua Tai",
-                'source_tcp_port': 5000,
-                'info_hash': 'iuiu',
-                'piece_id': 8
-            }
-        }
+        packet = self.receive_message(receiver_socket)
+
+        # packet = {
+        #     "TOPIC": "DOWNLOADING",
+        #     "HEADER": {
+        #         'type': 'REQ',
+        #         'source_ip': "Tai",
+        #         'source_tcp_port': 5000,
+        #         'info_hash': 'iuiu',
+        #         'piece_id': 8
+        #     }
+        # }
+        dest_host = packet['HEADER']['source_ip']
+        dest_port = packet['HEADER']['source_tcp_port']
+
         # Handshake (sender -> receiver)
         # Nếu sender có file đó (check 'info_hash' xem có ko)
-        input_info_hash = None
-        piece_path = self.search_completed_list(input_info_hash)  # DOnt know
+        # input_info_hash = None
+        piece_path = self.search_completed_list(packet['HEADER']['info_hash'])
         if piece_path:
             packet = {
                 "TOPIC": "UPLOADING",
                 "HEADER": {
                     'type': 'ACK',
-                    'source_ip': "IP cua Sy Duong",
-                    'source_tcp_port': 5000,
+                    'source_ip': "me",
+                    'source_port': 5000,
                     'info_hash': 'iuiu',
                     'piece_id': 8
                 }
             }
+            self.send_message(receiver_socket, packet)
             # If the file exist, send the file
-            needing_file = self.search_chunk_file(piece_path, id)
 
-            send_file(dest_host, dest_port, needing_file)  # Wtf is dest_host, dest_port in this
+            needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])
+
+            send_successed = send_file(self.host, self.find_unused_port(), dest_host, dest_port, needing_file)
 
             # Send noti after successfully sending file is include in the send_file func
         else:
@@ -568,18 +703,19 @@ class Peer:
                 "TOPIC": "UPLOADING",
                 "HEADER": {
                     'type': 'NACK',
-                    'source_ip': "IP cua Sy Duong",
-                    'source_tcp_port': 5000,
+                    'source_ip': "1:1:1:1",
+                    'source_port': 5000,
                     'info_hash': 'iuiu',
                     'piece_id': 8
                 }
             }
+            self.send_message(receiver_socket, packet)
         # Todo: assign to Sy Duong
         # Todo: Một peer khác kết nối với đến máy bạn để tải file từ máy bạn.
 
         while True:
-            if('the piece is sent'):
-                packet_from_SyDuong = {
+            if send_successed:
+                packet = {
                     "TOPIC": "UPLOADING",
                     "HEADER": {
                         'type': 'Completed',
@@ -589,37 +725,48 @@ class Peer:
                         'piece_id': 8
                     }
                 }
-                # Gưi packet này đến Receiver
-                # ....... Đợi nhận message từ receiver
+                self.send_message(receiver_socket, packet)
 
-                packet_from_Tai_req = {
-                    "TOPIC": "DOWNLOADING",
-                    "HEADER": {
-                        'type': 'REQ',
-                        'source_ip': "IP cua Tai",
-                        'source_tcp_port': 5000,
-                        'info_hash': 'iuiu',
-                        'piece_id': 9
+                # Send this packet to Receiver
+                # ........ Wait for receiver's message
+
+                packet = self.receive_message(receiver_socket)  # Download requirement packet
+
+                # packet = {
+                #     "TOPIC": "DOWNLOADING",
+                #     "HEADER": {
+                #         'type': 'REQ',
+                #         'source_ip': "IP cua Tai",
+                #         'source_tcp_port': 5000,
+                #         'info_hash': 'iuiu',
+                #         'piece_id': 9
+                #     }
+                # }
+
+                # D0n't know 4 sure
+                dest_host = packet['HEADER']['source_ip']
+                dest_port = packet['HEADER']['source_tcp_port']
+
+                piece_path = self.search_completed_list(packet['HEADER']['info_hash'])  # Find piece path
+
+                needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])  # File desired file
+
+                send_successed = send_file(self.host, self.find_unused_port(), dest_host, dest_port,
+                                           needing_file)  # Send the fuccing file
+
+                if send_successed:
+                    packet = {  # Finish packet
+                        "TOPIC": "DOWNLOADING",
+                        "HEADER": {
+                            'type': 'FINISH',
+                            'source_ip': "IP cua Tai",
+                            'source_tcp_port': 5000
+                        }
                     }
-                }
-                packet_from_Tai_finish = {
-                    "TOPIC": "DOWNLOADING",
-                    "HEADER": {
-                        'type': 'FINISH',
-                        'source_ip': "IP cua Tai",
-                        'source_tcp_port': 5000
-                    }
-                }
-                if (packet_from_Tai_finish['type'] == 'FINISH'):
+
+                    self.send_message(receiver_socket, packet)
+                if (packet['HEADER']['type']) == 'FINISH':
                     break
-
-                # send()
-
-
-
-
-
-
 
         return
 
@@ -627,6 +774,7 @@ class Peer:
     ######################### Thread method (end) #######################################
 
     ######################### Flow method (start) #######################################
+
     def establish_connection(self):
         info_hash = ''
         print("Info: Connecting to the tracker ......")

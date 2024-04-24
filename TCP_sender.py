@@ -1,8 +1,9 @@
 import socket
 import tqdm
 import os
+#from peer_proc import *
 
-def send_file(dest_host, dest_port, file_path):
+def send_file(source_host, source_port, dest_host, dest_port, file_path):
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096 # send 4096 bytes each time step
 
@@ -12,6 +13,7 @@ def send_file(dest_host, dest_port, file_path):
     # Receiver port
     port = dest_port
 
+
     # the name of file we want to send
     filename = os.path.basename(file_path)  #Send all file types but, not in directory \User (causes error)
 
@@ -20,6 +22,8 @@ def send_file(dest_host, dest_port, file_path):
     filesize = 1
     # create the client socket
     s = socket.socket()
+
+    #s.bind((source_host, source_port))
 
     print(f"[+] Connecting to {host}:{port}")
     s.connect((host, port))
@@ -41,10 +45,14 @@ def send_file(dest_host, dest_port, file_path):
             # busy networks
             s.sendall(bytes_read)
     # close the socket
+
     s.close()
+    return True
 
-dest_host = '10.0.244.129'    # 10.0.227.150
+dest_host = "192.168.150.117"    # 10.0.227.150 # ip cua may dich
 dest_port = 5000
-file_path = "D:\\Design_Specification_Template.docx"
+file_path = "input136.txt"
+source_host = "192.168.150.104" #ip cua may
+source_port = 5000
 
-send_file(dest_host,dest_port,file_path)
+a = send_file(source_host, source_port, dest_host,dest_port,file_path)
