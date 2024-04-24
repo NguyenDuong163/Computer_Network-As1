@@ -92,7 +92,7 @@ class Peer:
 
     def get_peers_list_msg(self, message):
         # Get 'peers' key
-        peer_dict = message['peers']
+        peer_dict = message['BODY']['peers']
         # List of pairs (ip, port)
         peers_list = []
         for peer_info in peer_dict:
@@ -319,18 +319,24 @@ class Peer:
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='started', completed_torrent=[])
         response_dict = self.receive_response_tracker()
         # Check the response
-        if 'status' not in response_dict:
+        if 'HEADER' not in response_dict:
+            print('Error: The response of tracker is invalid (the \'HEADER\' key is not included)')
+            return
+        if 'status' not in response_dict['HEADER']:
             print('Error: The response of tracker is invalid (the \'status\' key is not included)')
             return
-        response_status = response_dict['status']
+        response_status = response_dict['HEADER']['status']
         if response_status == '404':
             print('Warning: No peer in the swarm has this file. Cancel downloading')
             return
-        elif response_status != '202':
-            print('Error: The response of tracker is invalid (the \'status\' key is invalid)')
+        elif response_status != '200':
+            print('Error: The status value is invalid')
             return
         # Check and Get peer_list from response message
-        if 'peers' not in response_dict:
+        if 'BODY' not in response_dict:
+            print('Error: The response of tracker is invalid (the \'BODY\' key is not included)')
+            return
+        if 'peers' not in response_dict['BODY']:
             print('Error: The response of tracker is invalid (the \'peers\' key is not included)')
             return
         peers_list = self.get_peers_list_msg(response_dict)  # [('127:0:0:1', 5000), ('127:0:0:2', 5001)]
@@ -458,17 +464,18 @@ class Peer:
         print('Info: All pieces are downloaded')
 
         # Merge file
-        # Todo: merge file vào đường dẫn pieces_folder/file_name
+        print('Info: Reassembling the file')
         reassembler = FileSplitter(1)
         reassembler.reassemble_file(pieces_path, '\\pieces_folder')
 
         # Notify to the user
-        file_name = pieces_path.split('\\')[1]
+        pieces_path_split = pieces_path.split('\\')
+        folder_name = pieces_path_split[len(pieces_path_split) - 1]
+        file_name = folder_name[:folder_name.rfind('_') - 1] + '.' + folder_name[folder_name.rfind('_') + 1:]
         print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
 
         # Send 'completed' message to the tracker
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='completed', completed_torrent=[])
-
 
     def handle_user_command(self, user_command):
         # Parse the user command
@@ -573,12 +580,18 @@ class Peer:
 
     def handle_response_tracker(self, response_dict):
         # Parse the response
-        status_field = response_dict['status']
-        if status_field == '200':
-            print("Info: Login successfully")
-            return 1  # TODO: Handle information
-        elif status_field == '404':  # Wrong information of metainfo file
-            print(response_dict['message'])
+        if 'HEADER' not in response_dict:
+            print('Info: The init message of the tracker is invalid (the \'HEADER\' key is not included)')
+            return 0
+        if 'status' not in response_dict['HEADER']:
+            print('Info: The init message of the tracker is invalid (the \'status\' key is not included)')
+            return 0
+        if 'event' not in response_dict['HEADER']:
+            print('Info: The init message of the tracker is invalid (the \'event\' key is not included)')
+            return 0
+        status_field = response_dict['HEADER']['status']
+        if status_field == '404':  # Wrong information of metainfo file
+            print('Info: ', response_dict['message'])
             return 0
         elif status_field == '100':  # Wrong username or password
             print("Info: Connected")
@@ -768,14 +781,31 @@ class Peer:
                 #         'piece_id': 9
                 #     }
                 # }
-
                 # D0n't know 4 sure
-                dest_host = packet['HEADER']['source_ip']
-                dest_port = packet['HEADER']['source_ftp_port']
 
-                piece_path = self.search_completed_list(packet['HEADER']['info_hash'])  # Find piece path
+                if self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
+                    dest_host = packet['HEADER']['source_ip']
+                else:
+                    print('Info: the response of a seeder is invalid (0)')
+                    return
 
-                needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])  # File desired file
+                if self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
+                    dest_port = packet['HEADER']['source_ftp_port']
+                else:
+                    print('Info: the response of a seeder is invalid (1)')
+                    return
+
+                if self.message_seeder_checking(packet, 'HEADER', 'info_hash'):
+                    piece_path = self.search_completed_list(packet['HEADER']['info_hash'])  # Find piece path
+                else:
+                    print('Info: the response of a seeder is invalid (2)')
+                    return
+
+                if self.message_seeder_checking(packet, 'HEADER', 'piece_id'):
+                    needing_file = self.search_chunk_file(piece_path, packet['HEADER']['piece_id'])  # File desired file
+                else:
+                    print('Info: the response of a seeder is invalid (3)')
+                    return
 
                 send_successed = send_file(self.host, self.find_unused_port(), dest_host, dest_port,
                                            needing_file)  # Send the fuccing file
