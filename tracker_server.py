@@ -31,8 +31,8 @@ class TrackerServer:
         check_thread = threading.Thread(target=self.check_clients)
         check_thread.start()
 
-        update_thread = threading.Thread(target=self.update_xlsx)
-        update_thread.start()
+        # update_thread = threading.Thread(target=self.update_xlsx)
+        # update_thread.start()
 
         while True:
             # Accept a client connection
@@ -52,12 +52,22 @@ class TrackerServer:
             time.sleep(5)
             print(self.clients)
             for client in self.clients:
+                source_host, source_port = client.getpeername()
                 try:
-                    status = b'505'
-                    response_dict = {b'status': status}
-                    response = bencodepy.encode(response_dict)
+                    check_message = {
+                        "TOPIC": "TORRENT",
+                        "HEADER": {
+                            "event": "CHECK_RESPONESE",
+                            "source_host": source_host,
+                            "source_port": source_port,
+                        },
+                        "BODY": {}
+                    }
+                    encoded_check = bencodepy.encode(check_message)
+
                     with self.send_lock:
-                        client.send(response)
+                        client.send(encoded_check)
+
                     count = 3
                     while count > 0:
                         time.sleep(1)
@@ -67,10 +77,10 @@ class TrackerServer:
                             break
                     if count == 0: # Client did not respond
                         print('Client is not responding')
-                        client.close()
+                        self.clients = [client for client in self.clients if client.getpeername()[0] != source_host]
                         for info_hash, peers in self.torrents.items():
-                            self.torrents[info_hash] = [peer for peer in peers if peer['peer_id'] != client.peer_id]
-                        self.clients.remove(client)
+                            self.torrents[info_hash] = [peer for peer in peers if peer['seeder_host'] != source_host]
+                        client.close()
                     self.data_check = False
                 except OSError:  # Socket is closed
                     print("Client has disconnected")
@@ -79,26 +89,26 @@ class TrackerServer:
                 # Here you can perform additional checks or operations on the client if needed
 
 
-    def update_xlsx(self):
-        #TODO write info of self.clients to xlsx file
-        # df = pd.DataFrame(self.clients, columns=['Client Socket'])
-        # df.to_excel('clients.xlsx', index=False)
-        while True:
-            time.sleep(5)
-            # print("HAHAHA", self.clients)
-            df = pd.DataFrame(self.clients, columns=['Client Socket'])
-            df.to_excel('clients.xlsx', index=False)
-            data = []
-            for info_hash, peers in self.torrents.items():
-                for peer in peers:
-                    data.append([info_hash, peer['peer_id'], peer['ip'], peer['port']])
-            df = pd.DataFrame(data, columns=['Info Hash', 'Peer ID', 'IP', 'Port'])
-            df.to_excel('torrents.xlsx', index=False)
+    # def update_xlsx(self):
+    #     #TODO write info of self.clients to xlsx file
+    #     # df = pd.DataFrame(self.clients, columns=['Client Socket'])
+    #     # df.to_excel('clients.xlsx', index=False)
+    #     while True:
+    #         time.sleep(5)
+    #         # print("HAHAHA", self.clients)
+    #         df = pd.DataFrame(self.clients, columns=['Client Socket'])
+    #         df.to_excel('clients.xlsx', index=False)
+    #         data = []
+    #         for info_hash, peers in self.torrents.items():
+    #             for peer in peers:
+    #                 data.append([info_hash, peer['peer_id'], peer['ip'], peer['port']])
+    #         df = pd.DataFrame(data, columns=['Info Hash', 'Peer ID', 'IP', 'Port'])
+    #         df.to_excel('torrents.xlsx', index=False)
 
-            # for info_hash, peers in self.torrents.items():
-            #     print(f"Info Hash: {info_hash}")
-            #     for peer in peers:
-            #         print(f"    Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
+    #         # for info_hash, peers in self.torrents.items():
+    #         #     print(f"Info Hash: {info_hash}")
+    #         #     for peer in peers:
+    #         #         print(f"    Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
 
     def is_client_connected(self, client_socket):
         return client_socket in self.clients
@@ -112,46 +122,155 @@ class TrackerServer:
                 if data:
                     # Decode the data
                     request = bencodepy.decode(data)
-                    info_hash = request[b'info_hash']
-                    peer_id = request[b'peer_id']
-                    port = request.get(b'port', client_address[1])  # Use the client's port if not provided
-                    event = request.get(b'event', b'').decode()  # Default to an empty string if not provided
-                    if event == 'init':
-                        status = b'100'
-                        response_dict = {b'status': status}
-                        response = bencodepy.encode(response_dict)
-                        with self.send_lock:
-                            client_socket.send(response)
-                        continue
-                    if event == 'check_response':
-                        self.data_check = True
-                    else:
-                        peer_info = {'peer_id': peer_id, 'ip': client_address[0], 'port': port}
 
-                        if info_hash not in self.torrents:
-                            self.torrents[info_hash] = []
+                    header = request.get(b'HEADER')
+                    body = request.get(b'BODY')
+                    event = header.get(b'event').decode()
 
-                        if event == 'started':
-                            # send list of peers in this torrent
-                            if info_hash in self.torrents:
-                                status = b'200'
-                                response_dict = {b'status': status, b'peers': self.torrents[info_hash]}
-                                response = bencodepy.encode(response_dict)
-                                with self.send_lock:
-                                    client_socket.send(response)
+                    # print(header)
+                    # print(body)
+                    # print(event)
+                    # print(source_host)
+                    # print(source_port)
+                    # print(seeder_host)
+                    # print(seeder_port)
+
+                    if event == 'INIT':
+                        
+                        source_host = header.get(b'source_host').decode()
+                        source_port = header.get(b'source_port')
+                        seeder_host = header.get(b'seeder_host').decode()
+                        seeder_port = header.get(b'seeder_port')
+                        completed_list = body.get(b'completed_list')
+
+
+                        for item in completed_list:
+                            info_hash = item.get(b'info_hash').decode()
+                            # piece_path = item.get(b'piece_path').decode()
+                            # pieces = item.get(b'pieces')
+
+                            if info_hash not in self.torrents:
+                                self.torrents[info_hash] = [{
+                                    'seeder_host': seeder_host,
+                                    'seeder_port': seeder_port,
+                                    # 'piece_path': piece_path,
+                                    # 'pieces': pieces
+                                }]
                             else:
-                                status = b'404'
-                                response_dict = {b'status': status, 'message': 'No peers found for this torrent'}
-                                response = bencodepy.encode(response_dict)
+                                self.torrents[info_hash].append({
+                                    'seeder_host': seeder_host,
+                                    'seeder_port': seeder_port,
+                                    # 'piece_path': piece_path,
+                                    # 'pieces': pieces
+                                })
+                        
+                        response_message = {
+                            "TOPIC": "TORRENT",
+                            "HEADER": {
+                                "event": "INIT_ACK",
+                                "status": "100",
+                                "source_host": source_host,
+                                "source_port": source_port
+                            },
+                            "BODY": {}
+                        }
+
+                        encoded_response = bencodepy.encode(response_message)
+
+                        with self.send_lock:
+                            client_socket.send(encoded_response)
+                        continue
+                    if event == 'CHECK_RESPONSE':
+                        self.data_check = True
+                        completed_list = body.get(b'completed_list')
+                        for item in completed_list:
+                            info_hash = item.get(b'info_hash').decode()
+                            # piece_path = item.get(b'piece_path').decode()
+                            # pieces = item.get(b'pieces')
+
+                            if info_hash not in self.torrents:
+                                self.torrents[info_hash] = [{
+                                    'seeder_host': seeder_host,
+                                    'seeder_port': seeder_port,
+                                    # 'piece_path': piece_path,
+                                    # 'pieces': pieces
+                                }]
+                    else:
+                        if event == 'STARTED':
+                            # send list of peers in this torrent
+                            source_host = header.get(b'source_host').decode()
+                            source_port = header.get(b'source_port')
+                            seeder_host = header.get(b'seeder_host').decode()
+                            seeder_port = header.get(b'seeder_port')
+                            info_hash = body.get(b'info_hash').decode()
+
+
+                            peers = [
+                                {"peer_id": i, "ip": seeder['seeder_host'], "port": seeder['seeder_port']}
+                                for i, seeder in enumerate(self.torrents[info_hash])
+                            ]
+
+                            if info_hash in self.torrents:
+                                response_message = {
+                                    "TOPIC": "TORRENT",
+                                    "HEADER": {
+                                        "event": "STARTED_ACK",
+                                        "status": "200",
+                                        "source_host": source_host,
+                                        "source_port": source_port
+                                    },
+                                    "BODY": {
+                                        "peers": 
+                                            peers
+                                    }
+                                }
+
+                                encoded_response = bencodepy.encode(response_message)
+
                                 with self.send_lock:
-                                    client_socket.send(response)
+                                    client_socket.send(encoded_response)
+                            else:
+                                response_message = {
+                                    "TOPIC": "TORRENT",
+                                    "HEADER": {
+                                        "event": "STARTED_ACK",
+                                        "status": "404",
+                                        "source_host": source_host,
+                                        "source_port": source_port
+                                    },
+                                    "BODY": {
+                                        "message": "No peers found for this torrent"
+                                    }
+                                }
 
-                        if event == 'completed':
-                            self.torrents[info_hash].append(peer_info)
+                                encoded_response = bencodepy.encode(response_message)
 
-                        if event == 'stopped':
-                            if info_hash in self.torrents and peer_info in self.torrents[info_hash]:
-                                self.torrents[info_hash].remove(peer_info)
+                                with self.send_lock:
+                                    client_socket.send(encoded_response)
+
+                        if event == 'COMPLETED':
+                            seeder_host = header.get(b'seeder_host').decode()
+                            seeder_port = header.get(b'seeder_port')
+                            info_hash = body.get(b'info_hash').decode()
+
+                            if info_hash not in self.torrents:
+                                self.torrents[info_hash] = [{
+                                    'seeder_host': seeder_host,
+                                    'seeder_port': seeder_port
+                                }]
+                            else:
+                                self.torrents[info_hash].append({
+                                    'seeder_host': seeder_host,
+                                    'seeder_port': seeder_port
+                                })
+
+                        if event == 'STOPPED':
+                            source_host = header.get(b'source_host').decode()                          
+                            self.clients = [client for client in self.clients if client.getpeername()[0] != source_host]
+                            for info_hash, peers in self.torrents.items():
+                                self.torrents[info_hash] = [peer for peer in peers if peer['seeder_host'] != source_host]
+
+                            # close connection
 
             except Exception as e:
                 print(f"Error handling client {client_address}: {e}")
