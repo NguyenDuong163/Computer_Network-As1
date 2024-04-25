@@ -183,6 +183,8 @@ class TrackerServer:
                     if event == 'CHECK_RESPONSE':
                         self.data_check = True
                         completed_list = body.get(b'completed_list')
+                        seeder_host = header.get(b'seeder_host').decode()
+                        seeder_port = header.get(b'seeder_port')
                         for item in completed_list:
                             info_hash = item.get(b'info_hash').decode()
                             # piece_path = item.get(b'piece_path').decode()
