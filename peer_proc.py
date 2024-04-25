@@ -323,7 +323,7 @@ class Peer:
         # Check the existence of the file of torrent file
 
         # Send a downloading request to the tracker (event == 'started)
-        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='started', completed_torrent=[])
+        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='STARTED', completed_torrent=[])
         response_dict = self.receive_response_tracker()
         # Check the response
         if 'HEADER' not in response_dict:
@@ -483,7 +483,7 @@ class Peer:
         self.add_completed_list(pieces_path=pieces_path, )
 
         # Send 'completed' message to the tracker
-        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='completed', completed_torrent=[])
+        self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='COMPLETED', completed_torrent=[])
 
     def handle_user_command(self, user_command):
         # Parse the user command
@@ -842,5 +842,7 @@ def find_unused_port(start_port=5003, end_port=65535):
 
 
 if __name__ == '__main__':
-    peer = Peer('localhost', find_unused_port())
+    port = find_unused_port()
+    print(f'Info: Port {port}')
+    peer = Peer('127.0.0.1', port)
     peer.start()
