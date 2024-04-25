@@ -210,37 +210,37 @@ class Peer:
         # Make 'pieces folder'
         pieces_folder = 'pieces_folder' # Save to working directory
 
-        # Check if exist or not
-        if not os.path.exists(pieces_folder):
-            os.makedirs(pieces_folder)
+        # # Check if exist or not
+        # if not os.path.exists(pieces_folder):
+        #     os.makedirs(pieces_folder)
 
-        # Destination path =))
+        # # Destination path =))
         dest_path = os.path.join(pieces_folder, os.path.basename(file_path))
 
-        # Copy the file to pieces_folder
-        shutil.copyfile(file_path, dest_path)
+        # # Copy the file to pieces_folder
+        # shutil.copyfile(file_path, dest_path)
 
-        # Get the name & exten from the path
+        # # Get the name & exten from the path
         base_name = os.path.basename(file_path)
         file_name, file_exten = os.path.splitext(base_name)
-        file_exten = file_exten.replace('.', '')
-        # Create a new folder
+        # file_exten = file_exten.replace('.', '')
+        # # Create a new folder
         new_folder_name = f"{file_name}_{file_exten.lstrip('.')}"
         new_folder_path = os.path.join(pieces_folder, new_folder_name)
 
-        # Check existing
-        if not os.path.exists(new_folder_path):
-            os.makedirs(new_folder_path)
+        # # Check existing
+        # if not os.path.exists(new_folder_path):
+        #     os.makedirs(new_folder_path)
 
-        # Split file into chunks
+        # # Split file into chunks
         chunk_size = 50 * 1024 # Just for example
         num_chunks = file_split(dest_path, chunk_size)
 
 
-        # Move to THE folder
-        for i in range(num_chunks):
-            chunk_file = f"{file_name}_{file_exten}_{i}.bin"
-            shutil.move(chunk_file, new_folder_path)
+        # # Move to THE folder
+        # for i in range(num_chunks):
+        #     chunk_file = f"{file_name}_{file_exten}_{i}.bin"
+        #     shutil.move(chunk_file, new_folder_path)
 
         # Create info_hash
         info_hash = self.hash_file_name(file_name)
@@ -259,7 +259,7 @@ class Peer:
 
             # Add the new item to the 'self.completed_list' list
             self.completed_list.append(new_item)
-
+            print(self.completed_list)
             # Write the data back to the file
             with open('TorrentList.json', 'w') as f:
                 json.dump(data, f, indent=4)
