@@ -17,7 +17,7 @@
 
     Example: The user want to upload CV.pdf file to the Torrent (Path: \metainfo_folder\CV.pdf)
     Command:
-                Upload:CV.pdf
+                Upload:hehe.txt
 
     -> Metainfo file of the uploaded file is created in metainfo_folder (Path: \metainfo_folder\)
 

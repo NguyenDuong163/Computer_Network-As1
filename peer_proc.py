@@ -21,12 +21,13 @@ class Peer:
         self.seeder_socket = None
         self.peer_id = 0
         self.completed_list = []
+        self.completed_list_lock = 0        # Multi-threading lock
         self.uncompleted_list = []
         self.security_code = 0
         self.client_socket = None
         self.tracker_address = ()
         self.tracker_response_queue = queue.Queue()
-        self.tracker_request_lock = 0       # Lock sending message to tracker (1-lock & 0-unlock)
+        self.tracker_request_lock = 0       # Multi-threading Lock sending message to tracker (1-lock & 0-unlock)
         self.user_command_queue = queue.Queue()
 
     ########################## Misc method (start) ##########################################
@@ -94,8 +95,8 @@ class Peer:
         peers_list = []
         for peer_info in peer_dict:
             # Lấy giá trị ip và port từ mỗi phần tử
-            ip = peer_info['ip']
-            port = peer_info['port']
+            ip = peer_info['seeder_ip']
+            port = peer_info['seeder_port']
             # Thêm cặp giá trị (ip, port) vào mảng mới
             peers_list.append((ip, port))
         return peers_list
@@ -131,15 +132,6 @@ class Peer:
                 return port
         raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
 
-    def handle_leecher_connection(self, receiver_socket, listen_port):
-
-        listen_socket = socket.socket()
-        listen_socket.bind(('localhost', listen_port))
-        listen_socket.listen(5)
-        while True:
-            # to do
-            break
-
     # Searching folder function
     def search_completed_list(self, info_hash):
         for item in self.completed_list:
@@ -149,7 +141,6 @@ class Peer:
 
     # Searching id function
     def search_chunk_file(self, folder_path, id):
-
         files = os.listdir(folder_path)  # Get a list of all files in the folder
 
         filename_to_search = f"abc_pdf_{id}.bin"  # Construct the filename to search for
@@ -167,6 +158,23 @@ class Peer:
             print("Error: The message of seeder is invalid")
             return 0
         return 1
+
+    def add_completed_list(self, pieces_path, info_hash, pieces_num):
+        # Wait for geting lock
+        while self.completed_list_lock == 1:
+            continue
+        # Get lock
+        self.completed_list_lock = 1
+        # Update completed_list
+        new_file_info = {
+            'piece_path': pieces_path,
+            'info_hash': info_hash,
+            'pieces': pieces_num
+        }
+        # Upadte new dictionary to list
+        self.completed_list.append(new_file_info)
+        # Free the lock
+        self.completed_list_lock = 0
     ########################## Misc method (end) ##########################################
 
     ########################## Handling method (start) ##########################################
@@ -215,7 +223,7 @@ class Peer:
         # Get the name & exten from the path
         base_name = os.path.basename(file_path)
         file_name, file_exten = os.path.splitext(base_name)
-
+        file_exten = file_exten.replace('.', '')
         # Create a new folder
         new_folder_name = f"{file_name}_{file_exten.lstrip('.')}"
         new_folder_path = os.path.join(pieces_folder, new_folder_name)
@@ -228,10 +236,11 @@ class Peer:
         chunk_size = 50 * 1024 # Just for example
         num_chunks = file_split(dest_path, chunk_size)
 
+
         # Move to THE folder
         for i in range(num_chunks):
             chunk_file = f"{file_name}_{file_exten}_{i}.bin"
-            shutil.move(chunk_file,new_folder_path)
+            shutil.move(chunk_file, new_folder_path)
 
         # Create info_hash
         info_hash = self.hash_file_name(file_name)
@@ -256,10 +265,10 @@ class Peer:
                 json.dump(data, f, indent=4)
 
         ##
-        def add_to_metainfo_file(file_name, info_hash, pieces_path, pieces):
+        def add_to_metainfo_file(file_name, info_hash_in, pieces_path, pieces):
             # Create the new item
             new_item = {
-                "info_hash": info_hash,
+                "info_hash": info_hash_in,
                 "pieces_path": pieces_path,
                 "pieces": pieces
             }
@@ -311,6 +320,7 @@ class Peer:
         info_hash = metainfo_dict['info_hash']
         pieces_num = metainfo_dict['pieces']
         pieces_path = metainfo_dict['pieces_path']
+        # Check the existence of the file of torrent file
 
         # Send a downloading request to the tracker (event == 'started)
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='started', completed_torrent=[])
@@ -469,6 +479,8 @@ class Peer:
         folder_name = pieces_path_split[len(pieces_path_split) - 1]
         file_name = folder_name[:folder_name.rfind('_') - 1] + '.' + folder_name[folder_name.rfind('_') + 1:]
         print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
+        # TODO: add_completed_list
+        self.add_completed_list(pieces_path=pieces_path, )
 
         # Send 'completed' message to the tracker
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='completed', completed_torrent=[])
@@ -522,7 +534,7 @@ class Peer:
             continue
 
         # Lock sending message
-        self.tracker_request_lock = 0
+        self.tracker_request_lock = 1
 
         # Generate request
         request = {
@@ -540,15 +552,16 @@ class Peer:
                 'completed_list': completed_torrent
             }
         }
-
         # Pre encode request
         request = self.pre_encode_convert(request)
+
+        # print('Line 557', request)
         # Send a request to the tracker
         request_encoded = bencodepy.encode(request)
         self.client_socket.send(request_encoded)
 
         # Unlock sending message to tracker
-        self.tracker_request_lock = 1
+        self.tracker_request_lock = 0
 
     def receive_response_tracker(self):
         # Description: Just receive response (not include 'keep-alive' message)
@@ -594,6 +607,7 @@ class Peer:
         if 'HEADER' not in response_dict:
             print('Info: The init message of the tracker is invalid (the \'HEADER\' key is not included)')
             return 0
+        # print(response_dict)
         if 'status' not in response_dict['HEADER']:
             print('Info: The init message of the tracker is invalid (the \'status\' key is not included)')
             return 0
@@ -609,7 +623,7 @@ class Peer:
             return 1
 
     def handle_keep_alive_tracker(self):
-        self.send_request_tracker(info_hash='', peer_id=self.peer_id, event='check_response', completed_torrent=self.completed_list)
+        self.send_request_tracker(info_hash='', peer_id=self.peer_id, event='CHECK_RESPONSE', completed_torrent=self.completed_list)
     ######################## Protocol method (end) ######################################
 
     ######################## Thread method (start) ######################################
@@ -639,12 +653,13 @@ class Peer:
     def tracker_check(self):
         while True:
             message = self.receive_message_tracker()
+            # print('Response from tracker', message)
             # Handle immediately (if message is a keep-alive message)
             if 'HEADER' in message:
                 if 'status' in message['HEADER']:
-                    if message['status'] == '505':
+                    if message['HEADER']['status'] == '505':
                         self.handle_keep_alive_tracker()
-                        return
+
             self.tracker_response_queue.put(message)
 
     def user_check(self):
@@ -762,8 +777,10 @@ class Peer:
     def establish_connection(self):
         info_hash = ''
         print("Info: Connecting to the tracker ......")
+
+        self.send_request_tracker(info_hash, self.peer_id, 'INIT', self.completed_list)
+
         while True:
-            self.send_request_tracker(info_hash, self.peer_id, 'init', self.completed_list)
             response = self.receive_message_tracker()
             if self.handle_response_tracker(response) == 1:
                 break
@@ -773,7 +790,7 @@ class Peer:
         self.load_param("TorrentList.json")
 
         # User login
-        self.user_login()
+        # self.user_login()
 
         # Create a socket
         self.client_socket = socket.socket()
