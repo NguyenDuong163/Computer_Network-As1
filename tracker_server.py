@@ -57,7 +57,8 @@ class TrackerServer:
                     check_message = {
                         "TOPIC": "TORRENT",
                         "HEADER": {
-                            "event": "CHECK_RESPONESE",
+                            "event": "",
+                            "status": "505",
                             "source_host": source_host,
                             "source_port": source_port,
                         },
