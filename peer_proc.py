@@ -47,7 +47,7 @@ class Peer:
         security_code = peer_username + peer_password
         # Username: admin
         # Password: 1
-        while security_code != self.security_code:
+        while not security_code == self.security_code:
             print("Error: Wrong username or password. Please try again")
             # User login
             peer_username = input("Username: ")
@@ -87,6 +87,7 @@ class Peer:
         if pieces_path_key not in metainfo_dict:
             print(f"Error: The torrent file is invalid.")
             return False
+        return True
 
     def get_peers_list_msg(self, message):
         # Get 'peers' key
@@ -95,8 +96,8 @@ class Peer:
         peers_list = []
         for peer_info in peer_dict:
             # Lấy giá trị ip và port từ mỗi phần tử
-            ip = peer_info['seeder_ip']
-            port = peer_info['seeder_port']
+            ip = peer_info['ip']
+            port = peer_info['port']
             # Thêm cặp giá trị (ip, port) vào mảng mới
             peers_list.append((ip, port))
         return peers_list
@@ -315,7 +316,8 @@ class Peer:
         # Get metainfo from torrent file
         metainfo_dict = self.get_metainfo(torrent_path)
         # Verify the torrent file
-        if self.metainfo_verification(metainfo_dict=metainfo_dict):
+        print(1233)
+        if not self.metainfo_verification(metainfo_dict=metainfo_dict):
             return
         info_hash = metainfo_dict['info_hash']
         pieces_num = metainfo_dict['pieces']
@@ -324,7 +326,10 @@ class Peer:
 
         # Send a downloading request to the tracker (event == 'started)
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='STARTED', completed_torrent=[])
+        print("ABC")
         response_dict = self.receive_response_tracker()
+        print("-------------------------")
+        print(response_dict)
         # Check the response
         if 'HEADER' not in response_dict:
             print('Error: The response of tracker is invalid (the \'HEADER\' key is not included)')
@@ -336,7 +341,7 @@ class Peer:
         if response_status == '404':
             print('Warning: No peer in the swarm has this file. Cancel downloading')
             return
-        elif response_status != '200':
+        elif not response_status == '200':
             print('Error: The status value is invalid')
             return
         # Check and Get peer_list from response message
@@ -389,7 +394,7 @@ class Peer:
 
             # Handshake (on Application layer)
             self.send_message_seeder(leecher_socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
-                                     source_ftp_port=None, info_hash='', piece_id=None)
+                                     source_ftp_port='None', info_hash='', piece_id='None')
 
             response_seeder = self.receive_message_seeder(socket=leecher_socket)
             # Response checking
@@ -399,6 +404,8 @@ class Peer:
             if not response_seeder["HEADER"]['type'] == 'SYNC_ACK':
                 print('Warning: Can not handshake with a seeder. Close connection with the seeder')
                 return
+            
+            print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaa')
 
             while True:
                 # Create a socket for FTP
@@ -426,7 +433,7 @@ class Peer:
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                     return
                 # Response checking
-                if not response_seeder["HEADER"]['type'] == 'Completed':
+                if not response_seeder["HEADER"]['type'] == 'COMPLETED':
                     print('Warning: Can not download a piece from the seeder. Close connection with the seeder')
                     return
 
@@ -445,16 +452,17 @@ class Peer:
                         shared_table[piece_id] = 'processing'
                     # Nếu: Không còn piece cần tải -> Gửi 1 'FINISH' message đên seeder
                     else:
-                        self.send_message_seeder(leecher_socket=leecher_socket, mes_type='FINISH', source_ip=None,
-                                                 source_ftp_port=None, info_hash='', piece_id=None)
+                        self.send_message_seeder(leecher_socket=leecher_socket, mes_type='FINISH', source_ip='None',
+                                                 source_ftp_port="None", info_hash='', piece_id='None')
                         break
 
         # Create a remain pieces list
         remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
 
+
         # Allocate peers to all pieces (pieces_num and peers_num)
         allocating_time = 0
-        while (allocating_time <= pieces_num) & (allocating_time <= peers_num):
+        while (allocating_time < pieces_num) & (allocating_time < peers_num):
             sender_address = peers_list[allocating_time]
             sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, allocating_time, pieces_path, sender_address))
             sender_handle_thread.start()
@@ -587,7 +595,7 @@ class Peer:
                 'piece_id': piece_id
             }
         }
-        leecher_socket.send(message_seeder)
+        leecher_socket.send(bencodepy.encode(message_seeder))
 
     def receive_message_seeder(self, socket):
         message = socket.recv(1024)
@@ -600,7 +608,7 @@ class Peer:
 
     def send_message(self, conn, message):
         data = json.dumps(message).encode()  # dump dict to str, then encode str to bytes
-        conn.sendall(data)
+        conn.send(data)
 
     def handle_response_tracker(self, response_dict):
         # Parse the response
@@ -659,8 +667,8 @@ class Peer:
                 if 'status' in message['HEADER']:
                     if message['HEADER']['status'] == '505':
                         self.handle_keep_alive_tracker()
-
-            self.tracker_response_queue.put(message)
+                    else:
+                        self.tracker_response_queue.put(message)
 
     def user_check(self):
         while True:
@@ -756,7 +764,7 @@ class Peer:
                                      piece_id_in=piece_id)
 
             if send_successed:
-                send_message_leecher(receiver_socket_in=receiver_socket, msg_type='Completed', source_ip_in=self.host,
+                send_message_leecher(receiver_socket_in=receiver_socket, msg_type='COMPLETED', source_ip_in=self.host,
                                      source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
                                      piece_id_in=piece_id)
                 # Send this packet to Receiver
@@ -825,6 +833,9 @@ class Peer:
 
         user_handle_thread = threading.Thread(target=self.user_handle)
         user_handle_thread.start()
+
+        while True:
+            time.sleep(1)
     ######################### Flow method (end) #######################################
 
 
