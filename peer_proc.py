@@ -1,6 +1,6 @@
 import threading
 import time
-import shutil
+# import shutil
 import json
 from file_splitter import *
 # from file_splitter import *
@@ -19,16 +19,17 @@ class Peer:
         self.seeder_host = host
         self.seeder_port = None
         self.seeder_socket = None
+        self.client_socket = None
         self.peer_id = 0
         self.completed_list = []
         self.completed_list_lock = 0        # Multi-threading lock
         self.uncompleted_list = []
         self.security_code = 0
-        self.client_socket = None
         self.tracker_address = ()
         self.tracker_response_queue = queue.Queue()
         self.tracker_request_lock = 0       # Multi-threading Lock sending message to tracker (1-lock & 0-unlock)
         self.user_command_queue = queue.Queue()
+        self.store_database_lock = 0        # Multi-threading lock for storing data to database
 
     ########################## Misc method (start) ##########################################
     def load_param(self, json_path):
@@ -89,6 +90,24 @@ class Peer:
             return False
         return True
 
+    def file_exists_in_list(self, info_hash):
+        # Description: in completed_list
+        for file_exist in range(0, len(self.completed_list)):
+            if self.completed_list[file_exist]['info_hash'] == info_hash:
+                return True
+        return False
+
+    def get_prev_pieces_table(self, pieces_state_table, peers_num_remain, prev_remain_list):
+        pieces_state_table = ['completed' for _ in pieces_state_table]
+        for piece_id in range(0, len(pieces_state_table)):
+            if piece_id in prev_remain_list:
+                if peers_num_remain > 0:
+                    pieces_state_table[piece_id] = 'processing'
+                    peers_num_remain -= 1
+                else:
+                    pieces_state_table[piece_id] = 'pending'
+        return pieces_state_table
+
     def get_peers_list_msg(self, message):
         # Get 'peers' key
         peer_dict = message['BODY']['peers']
@@ -123,14 +142,14 @@ class Peer:
             return in_dict
 
     def find_unused_port(self, start_port=5001, end_port=65535):
-        for port in range(start_port, end_port + 1):
+        for port_in in range(start_port, end_port + 1):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 try:
-                    s.bind(('localhost', port))
+                    s.bind(('localhost', port_in))
                 except OSError:
                     # Port is already in use
                     continue
-                return port
+                return port_in
         raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
 
     # Searching folder function
@@ -154,11 +173,11 @@ class Peer:
     def message_seeder_checking(self, response_seeder, key, key_of_key):
         if key not in response_seeder:
             print("Error: The message of seeder is invalid")
-            return 0
+            return False
         if key_of_key not in response_seeder["HEADER"]:
             print("Error: The message of seeder is invalid")
-            return 0
-        return 1
+            return False
+        return True
 
     def add_completed_list(self, pieces_path, info_hash, pieces_num):
         # Wait for geting lock
@@ -316,20 +335,20 @@ class Peer:
         # Get metainfo from torrent file
         metainfo_dict = self.get_metainfo(torrent_path)
         # Verify the torrent file
-        print(1233)
         if not self.metainfo_verification(metainfo_dict=metainfo_dict):
             return
         info_hash = metainfo_dict['info_hash']
         pieces_num = metainfo_dict['pieces']
         pieces_path = metainfo_dict['pieces_path']
+
         # Check the existence of the file of torrent file
+        if self.file_exists_in_list(info_hash=info_hash):
+            print('Warning: This file exists in your device')
+            return
 
         # Send a downloading request to the tracker (event == 'started)
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='STARTED', completed_torrent=[])
-        print("ABC")
         response_dict = self.receive_response_tracker()
-        print("-------------------------")
-        print(response_dict)
         # Check the response
         if 'HEADER' not in response_dict:
             print('Error: The response of tracker is invalid (the \'HEADER\' key is not included)')
@@ -360,14 +379,28 @@ class Peer:
         peers_num = len(peers_list)
         lock_update_table = threading.Lock()
 
-        # Create a pieces state table (cấp phát trước các piece và chuyển trạng thái thành processing)
-        pieces_state_table = (['processing'] * min(pieces_num, peers_num)) + (['pending'] * max(0, pieces_num - peers_num))
+        # Check: Is this file in uncompleted_list?
+        pieces_state_table = ['pending'] * pieces_num
+        prev_remain_list = []
+        prev_pieces_state_table_ex = False
+        for file_index in range(0, len(self.uncompleted_list)):
+            if self.uncompleted_list[file_index]['info_hash'] == info_hash:
+                if not self.uncompleted_list[file_index]['remain_pieces'] == []:
+                    # Previous pieces state table exists
+                    prev_pieces_state_table_ex = True
+                    prev_remain_list = self.uncompleted_list[file_index]['remain_pieces']
+        if prev_pieces_state_table_ex:
+            # Get previous state table
+            pieces_state_table = self.get_prev_pieces_table(pieces_state_table, peers_num, prev_remain_list)
+        else:
+            # Create a pieces state table (cấp phát trước các piece và chuyển trạng thái thành processing)
+            pieces_state_table = (['processing'] * min(pieces_num, peers_num)) + (['pending'] * max(0, pieces_num - peers_num))
 
         # Define sender_handle
-        def sender_handle(shared_table, info_hash, piece_id, pieces_path, sender_address):
+        def sender_handle(shared_table, info_hash_in, piece_id_in, pieces_path_in, sender_address_in):
             # ----: Download a piece from sender
             #       Param:  + shared_table: bảng trạng thái các piece (pass by reference, automatically)
-            #               + info_hash
+            #               + info_hash_in
             #               + piece_id: số thứ tự của piece
             #               + sender_address: địa chỉ của sender. Vd: ('127:0:0:1', 5000)
             #       0.  Tự cấp phát 1 socket và kết nối đên sender_address
@@ -390,13 +423,13 @@ class Peer:
             # Bind the socket to address 
             leecher_socket.bind((self.host, self.find_unused_port()))
             # Establish connection
-            leecher_socket.connect(sender_address)
+            leecher_socket.connect(sender_address_in)
 
             # Handshake (on Application layer)
             self.send_message_seeder(leecher_socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
                                      source_ftp_port='None', info_hash='', piece_id='None')
 
-            response_seeder = self.receive_message_seeder(socket=leecher_socket)
+            response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
             # Response checking
             if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                 return
@@ -404,19 +437,17 @@ class Peer:
             if not response_seeder["HEADER"]['type'] == 'SYNC_ACK':
                 print('Warning: Can not handshake with a seeder. Close connection with the seeder')
                 return
-            
-            print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAaa')
 
             while True:
                 # Create a socket for FTP
-                leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(), pieces_path)
+                leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(), pieces_path_in)
                 leecher_ftp_socket.start()
                 # Request a piece
                 self.send_message_seeder(leecher_socket=leecher_socket, mes_type='REQ', source_ip=leecher_ftp_socket.host,
-                                         source_ftp_port=leecher_ftp_socket.port, info_hash=info_hash, piece_id=piece_id)
+                                         source_ftp_port=leecher_ftp_socket.port, info_hash=info_hash_in, piece_id=piece_id_in)
 
                 # Receive an ACK of piece
-                response_seeder = self.receive_message_seeder(socket=leecher_socket)
+                response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
 
                 # Response checking
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
@@ -429,7 +460,7 @@ class Peer:
                 leecher_ftp_socket.receive_file()
 
                 # Receive completed message of seeder
-                response_seeder = self.receive_message_seeder(socket=leecher_socket)
+                response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                     return
                 # Response checking
@@ -440,33 +471,46 @@ class Peer:
                 # Locking access to shared_table (collision -> data hazard)
                 with lock_update_table:
                     # ----: update pieces_state_table (shared_table) here
-                    #       1. Chuyển trạng thái piece vừa hoàn thành thành 'completed'
+                    #       1. Chuyển trạng thái piece vừa hoàn thành 'completed'
                     #       2. Tìm kiếm trong table xem còn piece nào đang trong trạng thái pending không
                     #       3. Nếu còn  then: -> chuyển piece_id = new_piece_id
                     #                         -> chuyển trạng thái piece đó thành 'processing'
                     #                   else: -> gửi 1 'FINISH' message đến seeder
-                    shared_table[piece_id] = 'completed'
+                    shared_table[piece_id_in] = 'completed'
                     # Nếu: Vẫn còn piece chưa được tiến hành tải
                     if 'pending' in shared_table:
-                        piece_id = shared_table.index('pending')
-                        shared_table[piece_id] = 'processing'
+                        piece_id_in = shared_table.index('pending')
+                        shared_table[piece_id_in] = 'processing'
                     # Nếu: Không còn piece cần tải -> Gửi 1 'FINISH' message đên seeder
                     else:
                         self.send_message_seeder(leecher_socket=leecher_socket, mes_type='FINISH', source_ip='None',
                                                  source_ftp_port="None", info_hash='', piece_id='None')
                         break
 
-        # Create a remain pieces list
+        # Create a remain pieces list (all pieces is in the 'processing' and 'pending' state)
         remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
 
+        # Create a new file node in uncompleted_list
+        uncompleted_file_dict = {
+            'info_hash': info_hash,
+            'remain_pieces': remain_pieces
+        }
+        self.uncompleted_list.append(uncompleted_file_dict)
 
         # Allocate peers to all pieces (pieces_num and peers_num)
-        allocating_time = 0
-        while (allocating_time < pieces_num) & (allocating_time < peers_num):
-            sender_address = peers_list[allocating_time]
-            sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, allocating_time, pieces_path, sender_address))
-            sender_handle_thread.start()
-            allocating_time += 1
+        peers_num_remain = peers_num
+        for piece_id in range(0, len(pieces_state_table)):
+            if peers_num_remain > 0:
+                # Tất cả các piece đang trong trạng thái processing là các piece đã được đặt chỗ cho peer từ trước
+                # Các piece có trạng thái pending thì bỏ qua (Hổ trợ cho advanced development 'tit-or-tat' )
+                if pieces_state_table[piece_id] == 'processing':
+                    sender_address = peers_list[peers_num - peers_num_remain]
+                    peers_num_remain -= 1
+                    sender_handle_thread = threading.Thread(target=sender_handle, args=(pieces_state_table, info_hash, piece_id, pieces_path, sender_address))
+                    sender_handle_thread.start()
+            else:
+                # All peers are allocated
+                break
 
         # Update and check pieces_state_table
         while not remain_pieces == []:
@@ -474,6 +518,11 @@ class Peer:
             print(f'Info: The number of remaining pieces to download: {len(remain_pieces)} piece(s)')
             # Update every 0.5 second
             time.sleep(0.5)
+
+        # Clear current file node from uncompleted_list
+        for file_index in range(0, len(self.uncompleted_list)):
+            if self.uncompleted_list[file_index]['info_hash'] == info_hash:
+                del self.uncompleted_list[file_index]
 
         # Notify to the user: All pieces are downloaded
         print('Info: All pieces are downloaded')
@@ -487,8 +536,7 @@ class Peer:
         folder_name = pieces_path_split[len(pieces_path_split) - 1]
         file_name = folder_name[:folder_name.rfind('_') - 1] + '.' + folder_name[folder_name.rfind('_') + 1:]
         print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
-        # TODO: add_completed_list
-        self.add_completed_list(pieces_path=pieces_path, )
+        self.add_completed_list(pieces_path=pieces_path, info_hash=info_hash, pieces_num=pieces_num)
 
         # Send 'completed' message to the tracker
         self.send_request_tracker(info_hash=info_hash, peer_id=self.peer_id, event='COMPLETED', completed_torrent=[])
@@ -597,8 +645,8 @@ class Peer:
         }
         leecher_socket.send(bencodepy.encode(message_seeder))
 
-    def receive_message_seeder(self, socket):
-        message = socket.recv(1024)
+    def receive_message_seeder(self, socket_in):
+        message = socket_in.recv(1024)
         return message
 
     def receive_message(self, conn):
@@ -661,11 +709,10 @@ class Peer:
     def tracker_check(self):
         while True:
             message = self.receive_message_tracker()
-            # print('Response from tracker', message)
             # Handle immediately (if message is a keep-alive message)
             if 'HEADER' in message:
                 if 'status' in message['HEADER']:
-                    if message['HEADER']['status'] == '505':
+                    if message['HEADER']['status'] == "505":
                         self.handle_keep_alive_tracker()
                     else:
                         self.tracker_response_queue.put(message)
@@ -680,6 +727,37 @@ class Peer:
         while True:
             if self.user_command_queue.qsize() > 0:
                 self.handle_user_command(self.user_command_queue.get())
+
+    def store_database(self, sec_delay=5):
+        while True:
+            # Store completed_list and uncompleted_list
+            loading_dict = {
+                "security_code": self.security_code,
+                "tracker_ip": self.host,
+                "tracker_port": self.port,
+                "completed": self.completed_list,
+                "uncompleted": self.uncompleted_list
+            }
+            # Path to the JSON file
+            json_path = "TorrentList.json"
+
+            # Overwrite the dictionary to the JSON file
+            # Wait for getting lock
+            while self.store_database_lock == 1:
+                continue
+            # Take the lock
+            self.store_database_lock = 1
+            with open(json_path, "w") as file:
+                json.dump(loading_dict, file, indent=4)
+            # Release the lock
+            self.store_database_lock = 0
+
+            # 1-shot task
+            if sec_delay == -1:
+                return
+            # periodic task
+            else:
+                time.sleep(sec_delay)
 
     def leecher_handle(self, receiver_socket, listen_port):
         def send_message_leecher(receiver_socket_in, msg_type, source_ip_in=self.host, source_port_in=listen_port, info_hash_in='', piece_id_in=None):
@@ -815,10 +893,11 @@ class Peer:
         # Establish connection (Application layer Handshake): The peer send metainfo to the tracker
         self.establish_connection()
 
-        # Create 3 main threads -> leecher_check (another peer want to download your file)
+        # Create 5 main threads -> leecher_check (another peer want to download your file)
         #                       -> tracker_check: receive message from the tracker and store the message to queue
-        #                       -> user_check: receive user's command and store to a queue
+        #                       -> user_check(__main__): receive user's command and store to a queue
         #                       -> user_handle: Handle the command of user
+        #                       -> store_database: Store every 5 seconds
         #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
         #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
         #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker
@@ -828,27 +907,33 @@ class Peer:
         tracker_check_thread = threading.Thread(target=self.tracker_check)
         tracker_check_thread.start()
 
-        user_check_thread = threading.Thread(target=self.user_check)
-        user_check_thread.start()
-
         user_handle_thread = threading.Thread(target=self.user_handle)
         user_handle_thread.start()
 
+        store_database_thread = threading.Thread(target=self.store_database)
+        store_database_thread.start()
+
+        # User command-line thread
         while True:
-            time.sleep(1)
+            time.sleep(0.2)
+            user_command = input("User command-line: ")
+            if user_command == 'logout':
+                # Save state and completed_list to TorrentList.json
+                self.store_database(-1) # 1-shot task
+                return
+            self.user_command_queue.put(user_command)
     ######################### Flow method (end) #######################################
 
 
-
 def find_unused_port(start_port=5003, end_port=65535):
-    for port in range(start_port, end_port + 1):
+    for port_in in range(start_port, end_port + 1):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('localhost', port))
+                s.bind(('localhost', port_in))
             except OSError:
                 # Port is already in use
                 continue
-            return port
+            return port_in
     raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
 
 
