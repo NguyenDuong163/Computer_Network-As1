@@ -13,7 +13,7 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
     # Receiver port
     port = dest_port
 
-
+    print('Debug(2): ', file_path)
     # the name of file we want to send
     filename = os.path.basename(file_path)  #Send all file types but, not in directory \User (causes error)
 
@@ -41,7 +41,7 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
             if not bytes_read:
                 # file transmitting is done
                 break
-            # we use sendall to assure transimission in
+            # we use sendall to assure transmission in
             # busy networks
             s.sendall(bytes_read)
     # close the socket

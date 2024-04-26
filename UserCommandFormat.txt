@@ -9,7 +9,7 @@
 
     Example: The user want to download CV.pdf file from metainfo file (CV_info.json) of CV.pdf (Path: \metainfo_folder\CV_info.bin)
     Command:
-                Download:metainfo_folder/CV_info.json
+                Download:metainfo_folder/hehe_metainfo.json
 
 * Uploading case:
     <cmd_type>: "Upload"
