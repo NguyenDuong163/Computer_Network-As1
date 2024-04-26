@@ -12,7 +12,6 @@ class TrackerServer:
         self.clients = []
         self.torrents = {}
         self.send_lock = threading.Lock()
-        self.recv_lock = threading.Lock()   
         self.data_check = False
 
     def start(self):
@@ -51,8 +50,11 @@ class TrackerServer:
         while True:
             time.sleep(5)
             print(self.clients)
+            # print(self.torrents)
             for client in self.clients:
                 source_host, source_port = client.getpeername()
+                print(source_host)
+                print(source_port)
                 try:
                     check_message = {
                         "TOPIC": "TORRENT",
@@ -78,7 +80,7 @@ class TrackerServer:
                             break
                     if count == 0: # Client did not respond
                         print('Client is not responding')
-                        self.clients = [client for client in self.clients if client.getpeername()[0] != source_host]
+                        self.clients = [client for client in self.clients if ((client.getpeername()[0] != source_host) and (client.getpeername()[1] != source_port))]
                         for info_hash, peers in self.torrents.items():
                             self.torrents[info_hash] = [peer for peer in peers if peer['seeder_host'] != source_host]
                         client.close()
@@ -118,8 +120,7 @@ class TrackerServer:
         while True:
             try:
                 # Receive data from the client
-                with self.recv_lock:
-                    data = client_socket.recv(1024)
+                data = client_socket.recv(1024)
                 if data:
                     # Decode the data
                     request = bencodepy.decode(data)
@@ -200,6 +201,7 @@ class TrackerServer:
                                 }]
                     else:
                         if event == 'STARTED':
+                            print("ABC")
                             # send list of peers in this torrent
                             source_host = header.get(b'source_host').decode()
                             source_port = header.get(b'source_port')
