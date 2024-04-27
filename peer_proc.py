@@ -12,6 +12,7 @@ import bencodepy
 import queue
 import hashlib
 
+
 class Peer:
     def __init__(self, host, port):
         self.host = host
@@ -30,6 +31,7 @@ class Peer:
         self.tracker_request_lock = 0       # Multi-threading Lock sending message to tracker (1-lock & 0-unlock)
         self.user_command_queue = queue.Queue()
         self.store_database_lock = 0        # Multi-threading lock for storing data to database
+        self.port_allocation_lock = 0
 
     ########################## Misc method (start) ##########################################
     def load_param(self, json_path):
@@ -142,6 +144,11 @@ class Peer:
             return in_dict
 
     def find_unused_port(self, start_port=5001, end_port=65535):
+        while self.port_allocation_lock == 1:
+            continue
+
+        # Get the lock
+        self.port_allocation_lock = 1
         for port_in in range(start_port, end_port + 1):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 try:
@@ -149,8 +156,13 @@ class Peer:
                 except OSError:
                     # Port is already in use
                     continue
+                # Release the lock
+                self.port_allocation_lock = 0
                 return port_in
+        # Release the lock
+        self.port_allocation_lock = 0
         raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
+
 
     # Searching folder function
     def search_completed_list(self, info_hash):
@@ -334,6 +346,13 @@ class Peer:
 
         # Get metainfo from torrent file
         metainfo_dict = self.get_metainfo(torrent_path)
+
+        # Copy torrent file to metainfo_folder
+        dest_folder = 'metainfo_folder/'
+        dest_path = os.path.join(dest_folder, os.path.basename(torrent_path))
+        print('Debug(20): ', dest_path)
+        shutil.copyfile(torrent_path, dest_path)
+
         # Verify the torrent file
         if not self.metainfo_verification(metainfo_dict=metainfo_dict):
             return
@@ -428,8 +447,9 @@ class Peer:
             # Handshake (on Application layer)
             self.send_message_seeder(leecher_socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
                                      source_ftp_port='None', info_hash='', piece_id='None')
-
+            print('Debug(15): Before receiving the response')
             response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
+            print('Debug(16): After receiving the response')
             # Response checking
             if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                 return
@@ -440,7 +460,7 @@ class Peer:
 
             while True:
                 # Create a socket for FTP
-                leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(), pieces_path_in)
+                leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(start_port=10000), pieces_path_in)
 
                 # Request a piece
                 self.send_message_seeder(leecher_socket=leecher_socket, mes_type='REQ', source_ip=leecher_ftp_socket.host,
@@ -459,6 +479,7 @@ class Peer:
                 # Receive the file (until completed)
                 leecher_ftp_socket.start()
                 leecher_ftp_socket.receive_file()
+                leecher_ftp_socket.close_connection()
 
                 # Receive completed message of seeder
                 response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
@@ -486,6 +507,8 @@ class Peer:
                     else:
                         self.send_message_seeder(leecher_socket=leecher_socket, mes_type='FINISH', source_ip='None',
                                                  source_ftp_port="None", info_hash='', piece_id='None')
+                        # Close connection
+                        leecher_socket.close()
                         break
 
         # Create a remain pieces list (all pieces is in the 'processing' and 'pending' state)
@@ -500,6 +523,11 @@ class Peer:
 
         # Allocate peers to all pieces (pieces_num and peers_num)
         peers_num_remain = peers_num
+
+        print('Debug(11): ', peers_list)
+        print('Debug(12): ', peers_num_remain)
+        print('Debug(13): ', pieces_state_table)
+
         for piece_id in range(0, len(pieces_state_table)):
             if peers_num_remain > 0:
                 # Tất cả các piece đang trong trạng thái processing là các piece đã được đặt chỗ cho peer từ trước
@@ -515,6 +543,8 @@ class Peer:
 
         # Update and check pieces_state_table
         while not remain_pieces == []:
+            # Update remain_pieces
+            remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
             # Notify to user about remain pieces
             print(f'Info: The number of remaining pieces to download: {len(remain_pieces)} piece(s)')
             # Update every 0.5 second
@@ -530,12 +560,12 @@ class Peer:
 
         # Merge file
         print('Info: Reassembling the file')
-        reassemble_file(pieces_path, '\\pieces_folder')
+        reassemble_file(pieces_path, '/pieces_folder')
 
         # Notify to the user
         pieces_path_split = pieces_path.split('\\')
         folder_name = pieces_path_split[len(pieces_path_split) - 1]
-        file_name = folder_name[:folder_name.rfind('_') - 1] + '.' + folder_name[folder_name.rfind('_') + 1:]
+        file_name = folder_name[:folder_name.rfind('_')] + '.' + folder_name[folder_name.rfind('_') + 1:]
         print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
         self.add_completed_list(pieces_path=pieces_path, info_hash=info_hash, pieces_num=pieces_num)
 
@@ -765,7 +795,7 @@ class Peer:
                 time.sleep(sec_delay)
 
     def leecher_handle(self, receiver_socket, listen_port):
-        def send_message_leecher(receiver_socket_in, msg_type, source_ip_in=self.host, source_port_in=listen_port, info_hash_in='', piece_id_in='None'):
+        def send_message_leecher(receiver_socket_in, msg_type, source_ip_in=self.host, source_port_in=listen_port, info_hash_in='None', piece_id_in='None'):
             packet_in = {
                 "TOPIC": "UPLOADING",
                 "HEADER": {
@@ -788,7 +818,7 @@ class Peer:
 
         print('Debug(0): ', packet)
         if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
-            send_message_leecher(receiver_socket, msg_type='SYNC_ACK', source_ip_in=self.host, source_port_in=listen_port)
+            send_message_leecher(receiver_socket_in=receiver_socket, msg_type='SYNC_ACK', source_ip_in=self.host, source_port_in=listen_port)
             # self.send_message(receiver_socket, packet)
 
         while True:
@@ -838,8 +868,8 @@ class Peer:
                                      piece_id_in=piece_id)
 
                 # If the file exist, send the file
-
                 needing_file = self.search_chunk_file(piece_path, piece_id)
+                print('Debug(100): ', needing_file)
 
                 send_successed = send_file(self.host, self.find_unused_port(), dest_host_in, dest_port_in, needing_file)
 
@@ -865,7 +895,6 @@ class Peer:
             listen_port = self.find_unused_port()
             thread = threading.Thread(target=self.leecher_handle, args=(receiver_socket, listen_port))
             thread.start()
-            break
     ######################### Thread method (end) #######################################
 
     ######################### Flow method (start) #######################################

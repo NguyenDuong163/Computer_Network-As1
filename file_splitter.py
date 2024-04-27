@@ -73,11 +73,18 @@ def reassemble_file(chunk_path, output_path):
     # Sort files, maybe not necessary
     chunk_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
 
-    # Extract the original file name and extension from the chunk_path
-    file_name, file_exten = os.path.basename(chunk_path).split('_')
+    # Get file path
+    folder_name = os.path.basename(chunk_path)
+    file_path = folder_name[:folder_name.rfind('_')] + '.' + folder_name[folder_name.rfind('_') + 1:]
 
-    # Create a new file in the output directory with the original file name and extension
-    output_file_path = os.path.join(output_path, f'{file_name}.{file_exten}')
+    # Create a file path in the output directory with the original file name and extension
+    output_file_path = os.path.join(output_path, file_path)
+
+    # Remove first '/' character
+    output_file_path = output_file_path[1:]
+
+    # Create a new file
+    open(output_file_path, 'a')
 
     with open(output_file_path, 'wb') as output_file:
         for chunk_file in chunk_files:

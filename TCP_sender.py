@@ -43,7 +43,8 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
                 break
             # we use sendall to assure transmission in
             # busy networks
-            s.sendall(bytes_read)
+
+            s.send(bytes_read)
     # close the socket
 
     s.close()

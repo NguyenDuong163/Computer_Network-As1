@@ -13,12 +13,14 @@ class FTPReceiver:
         self.directory = directory
         self.server_socket = socket.socket()  # TCP socket
         self.server_socket.bind((self.host, self.port))
+        self.client_socket = None
+        self.client_address = None
 
     def start(self):
         self.server_socket.listen(5)  # enable the server to accept connections
         print(f"[*] Listening as {self.host}:{self.port}")
-        self.client_socket, self.address = self.server_socket.accept()  # accept connection if there is any
-        print(f"[+] {self.address} is connected.")
+        self.client_socket, self.client_address = self.server_socket.accept()  # accept connection if there is any
+        print(f"[+] {self.client_address} is connected.")
 
     def receive_file(self):
         received = self.client_socket.recv(self.BUFFER_SIZE).decode()
