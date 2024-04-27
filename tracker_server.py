@@ -2,7 +2,7 @@ import socket
 import threading
 import bencodepy # type: ignore
 import time
-import pandas as pd
+# import pandas as pd
 
 class TrackerServer:
     def __init__(self, host, port):
@@ -49,12 +49,16 @@ class TrackerServer:
     def check_clients(self):
         while True:
             time.sleep(5)
-            print(self.clients)
+            print('------------------------------------------')
+            print('Debug(clients) : ', self.clients)
+            print('------------------------------------------')
+            print('Debug(torrents): ', self.torrents)
+            print('------------------------------------------')
             # print(self.torrents)
             for client in self.clients:
                 source_host, source_port = client.getpeername()
-                print(source_host)
-                print(source_port)
+                # print(source_host)
+                # print(source_port)
                 try:
                     check_message = {
                         "TOPIC": "TORRENT",
@@ -138,7 +142,7 @@ class TrackerServer:
                     # print(seeder_port)
 
                     if event == 'INIT':
-                        
+
                         source_host = header.get(b'source_host').decode()
                         source_port = header.get(b'source_port')
                         seeder_host = header.get(b'seeder_host').decode()
@@ -199,6 +203,12 @@ class TrackerServer:
                                     # 'piece_path': piece_path,
                                     # 'pieces': pieces
                                 }]
+                            else:
+                                if not any(torrent['seeder_host'] == seeder_host and torrent['seeder_port'] == seeder_port for torrent in self.torrents[info_hash]):
+                                    self.torrents[info_hash].append({
+                                        'seeder_host': seeder_host,
+                                        'seeder_port': seeder_port
+                                    })
                     else:
                         if event == 'STARTED':
                             print("ABC")
