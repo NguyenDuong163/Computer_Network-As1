@@ -493,7 +493,7 @@ class Peer:
                     with lock_update_table:
                         shared_table[piece_id_in] = 'pending'
                 # print(f'Debug(28): Leecher receives a packet with content: {response_seeder}')
-                print(f'AFTER-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}')
+                print(f'AFTER-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}, packet: {response_seeder}')
 
                 # Response checking
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
@@ -510,7 +510,10 @@ class Peer:
                     leecher_ftp_socket.start()
                     leecher_ftp_socket.receive_file()
                     # leecher_ftp_socket.close_connection()
+                    print(f'Received Piece with ID {piece_id_in} +++++++++++++++++++++++++++++++')
                 except:
+                    # Skip the 'COMPLETED' response from seeder
+                    response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
                     print(f'Warning: Reset pieces transfer connection (piece ID: {piece_id_in}, sender address: {sender_address_in})------------------')
                     continue
                 # Notify to sthe user
@@ -916,6 +919,7 @@ class Peer:
                 print('Debug(23): ', needing_file)
 
                 send_successed = send_file(self.host, self.find_unused_port(), dest_host_in, dest_port_in, needing_file)
+                print(f'DEBUGG: SENDDDDDD {send_successed} piece with ID {piece_id} xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
             else:
                 # Nếu sender ko có file đó
                 send_message_leecher(receiver_socket_in=receiver_socket, msg_type='NACK', source_ip_in=self.host,
@@ -923,6 +927,7 @@ class Peer:
                                      piece_id_in=piece_id)
 
             if send_successed:
+                print(f'DEBUGG: send a piece with ID {piece_id} +++++++++++++++++++')
                 send_message_leecher(receiver_socket_in=receiver_socket, msg_type='COMPLETED', source_ip_in=self.host,
                                      source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
                                      piece_id_in=piece_id)
