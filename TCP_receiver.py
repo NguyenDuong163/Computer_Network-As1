@@ -23,6 +23,10 @@ class FTPReceiver:
         print(f"[+] {self.client_address} is connected.")
 
     def receive_file(self):
+        ########
+        # self.client_socket, self.client_address = self.server_socket.accept()  # accept connection if there is any
+        # print(f"[+] {self.client_address} is connected.")
+        #######
         received = self.client_socket.recv(self.BUFFER_SIZE).decode()
         filename, filesize = received.split(self.SEPARATOR)
         filename = os.path.basename(filename)  # remove absolute path if there is
@@ -38,6 +42,8 @@ class FTPReceiver:
         with open(filename, "wb") as f:
             while True:
                 bytes_read = self.client_socket.recv(self.BUFFER_SIZE)
+                if len(bytes_read) < 100:
+                    print(f'Debug(24): bytes_read: {bytes_read}')
                 if not bytes_read:
                     break  # file transmitting is done
                 f.write(bytes_read)  # write to the file the bytes we just received

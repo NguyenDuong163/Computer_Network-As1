@@ -3,6 +3,7 @@ import tqdm
 import os
 #from peer_proc import *
 
+
 def send_file(source_host, source_port, dest_host, dest_port, file_path):
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096 # send 4096 bytes each time step
@@ -13,7 +14,7 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
     # Receiver port
     port = dest_port
 
-    print('Debug(2): ', file_path)
+    # print('Debug(2): ', file_path)
     # the name of file we want to send
     filename = os.path.basename(file_path)  #Send all file types but, not in directory \User (causes error)
 
@@ -23,10 +24,15 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
     # create the client socket
     s = socket.socket()
 
-    #s.bind((source_host, source_port))
+    # s.bind((source_host, source_port))
 
     print(f"[+] Connecting to {host}:{port}")
-    s.connect((host, port))
+    while True:
+        try:
+            s.connect((host, port))
+            break
+        except:
+            print('Warning: Retry to connect to 1 leecher-------------------------------')
     print("[+] Connected.")
 
     # send the filename and filesize
@@ -43,7 +49,7 @@ def send_file(source_host, source_port, dest_host, dest_port, file_path):
                 break
             # we use sendall to assure transmission in
             # busy networks
-
+            # print(f'Debug(20): {bytes_read}')
             s.send(bytes_read)
     # close the socket
 
