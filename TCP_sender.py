@@ -4,57 +4,68 @@ import os
 #from peer_proc import *
 
 
-def send_file(source_host, source_port, dest_host, dest_port, file_path):
+class FileSender:
     SEPARATOR = "<SEPARATOR>"
-    BUFFER_SIZE = 4096 # send 4096 bytes each time step
+    BUFFER_SIZE = 4096  # receive 4096 bytes each time
 
-    # Receiver IP address
-    host = dest_host
+    def __init__(self, dest_host, dest_port, file_path):
+        self.dest_host = dest_host
+        self.dest_port = dest_port
+        self.file_path = file_path
 
-    # Receiver port
-    port = dest_port
+    def config_sender(self, separator_in, buffer_size_in):
+        self.SEPARATOR = separator_in
+        self.BUFFER_SIZE = buffer_size_in
 
-    # print('Debug(2): ', file_path)
-    # the name of file we want to send
-    filename = os.path.basename(file_path)  #Send all file types but, not in directory \User (causes error)
+    def send_file(self):
 
-    # get the file size
-    # filesize = os.path.getsize(file_path)
-    filesize = 1
-    # create the client socket
-    s = socket.socket()
+        # Receiver IP address
+        host = self.dest_host
 
-    # s.bind((source_host, source_port))
+        # Receiver port
+        port = self.dest_port
 
-    print(f"[+] Connecting to {host}:{port}")
-    while True:
-        try:
-            s.connect((host, port))
-            break
-        except:
-            print('Warning: Retry to connect to 1 leecher-------------------------------')
-    print("[+] Connected.")
+        # print('Debug(2): ', file_path)
+        # the name of file we want to send
+        filename = os.path.basename(self.file_path)  #Send all file types but, not in directory \User (causes error)
 
-    # send the filename and filesize
-    s.send(f"{filename}{SEPARATOR}{filesize}".encode())
+        # get the file size
+        # filesize = os.path.getsize(file_path)
+        filesize = 1
+        # create the client socket
+        s = socket.socket()
 
-    # start sending the file
+        # s.bind((source_host, source_port))
 
-    with open(file_path, "rb") as f:
+        # print(f"[+] Connecting to {host}:{port}")
         while True:
-            # read the bytes from the file
-            bytes_read = f.read(BUFFER_SIZE)
-            if not bytes_read:
-                # file transmitting is done
+            try:
+                s.connect((host, port))
                 break
-            # we use sendall to assure transmission in
-            # busy networks
-            # print(f'Debug(20): {bytes_read}')
-            s.send(bytes_read)
-    # close the socket
+            except:
+                print('Warning: Retry to connect to 1 leecher')
+        # print("[+] Connected.")
 
-    s.close()
-    return True
+        # send the filename and filesize
+        s.send(f"{filename}{self.SEPARATOR}{filesize}".encode())
+
+        # start sending the file
+
+        with open(self.file_path, "rb") as f:
+            while True:
+                # read the bytes from the file
+                bytes_read = f.read(self.BUFFER_SIZE)
+                if not bytes_read:
+                    # file transmitting is done
+                    break
+                # we use sendall to assure transmission in
+                # busy networks
+                # print(f'Debug(20): {bytes_read}')
+                s.send(bytes_read)
+        # close the socket
+
+        s.close()
+        return True
 
 # dest_host = "192.168.150.117"    # 10.0.227.150 # ip cua may dich
 # dest_port = 5000

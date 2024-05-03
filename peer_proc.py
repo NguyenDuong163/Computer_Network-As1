@@ -15,6 +15,10 @@ import hashlib
 
 
 class Peer:
+
+    PIECE_SIZE = 16 * 1024 * 1024          # Unit: Bytes
+    FTP_PAYLOAD_LENGTH = 4 * 1024 * 1024   # Unit: bytes
+
     def __init__(self, host, port):
         self.host = host
         self.port = port
@@ -266,10 +270,10 @@ class Peer:
         # if not os.path.exists(new_folder_path):
         #     os.makedirs(new_folder_path)
 
-        print('Debug: ', dest_path)
+        # print('Debug: ', dest_path)
 
         # # Split file into chunks
-        chunk_size = 50 * 1024 # Just for example
+        chunk_size = self.PIECE_SIZE # Just for example
         num_chunks = file_split(dest_path, chunk_size)
 
 
@@ -356,7 +360,7 @@ class Peer:
         # Copy torrent file to metainfo_folder
         dest_folder = 'metainfo_folder/'
         dest_path = os.path.join(dest_folder, os.path.basename(torrent_path))
-        print('Debug(20): ', dest_path)
+        # print('Debug(20): ', dest_path)
         shutil.copyfile(torrent_path, dest_path)
 
         # Verify the torrent file
@@ -450,7 +454,7 @@ class Peer:
             # Establish connection
             leecher_socket.connect(sender_address_in)
             # Set timeout
-            leecher_socket.settimeout(1) # Timeout 1 second
+            leecher_socket.settimeout(2) # Timeout 1 second
 
             # Handshake (on Application layer)
             self.send_message_seeder(leecher_socket=leecher_socket, mes_type='SYNC', source_ip=self.host,
@@ -473,7 +477,9 @@ class Peer:
                 leecher_ftp_socket = None
                 while True:
                     try:
-                        leecher_ftp_socket = FTPReceiver(self.host, self.find_unused_port(start_port=10000), pieces_path_in)
+                        leecher_ftp_socket = FileReceiver(self.host, self.find_unused_port(start_port=10000), pieces_path_in)
+                        leecher_ftp_socket.config_receiver(separator_in="<SEPARATOR>",
+                                                           buffer_size_in=self.FTP_PAYLOAD_LENGTH)
                         break
                     except OSError:
                         # Port is used
@@ -484,7 +490,7 @@ class Peer:
                                          source_ftp_port=leecher_ftp_socket.port, info_hash=info_hash_in, piece_id=piece_id_in)
 
                 # Receive an ACK of piece
-                print(f'PREV-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}')
+                # print(f'PREV-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}')
                 try:
                     response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
                 except socket.timeout:
@@ -493,7 +499,7 @@ class Peer:
                     with lock_update_table:
                         shared_table[piece_id_in] = 'pending'
                 # print(f'Debug(28): Leecher receives a packet with content: {response_seeder}')
-                print(f'AFTER-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}, packet: {response_seeder}')
+                # print(f'AFTER-STUCKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK {piece_id_in}, packet: {response_seeder}')
 
                 # Response checking
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
@@ -509,13 +515,15 @@ class Peer:
                 try:
                     leecher_ftp_socket.start()
                     leecher_ftp_socket.receive_file()
+                    receive_successfully = True
                     # leecher_ftp_socket.close_connection()
-                    print(f'Received Piece with ID {piece_id_in} +++++++++++++++++++++++++++++++')
+                    # print(f'Received Piece with ID {piece_id_in} +++++++++++++++++++++++++++++++')
                 except:
                     # Skip the 'COMPLETED' response from seeder
-                    response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
+                    # response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
                     print(f'Warning: Reset pieces transfer connection (piece ID: {piece_id_in}, sender address: {sender_address_in})------------------')
-                    continue
+                    receive_successfully = False
+                    # continue
                 # Notify to sthe user
                 print(f'Info: Successfully received piece with ID {piece_id_in}.')
                 # Receive completed message of seeder
@@ -525,9 +533,11 @@ class Peer:
                     return
                 # Response checking
                 if not response_seeder["HEADER"]['type'] == 'COMPLETED':
-                    print(f'Warning: Can not download a piece from the seeder. Close connection with the seeder (response: {response_seeder})')
+                    print(f'Warning: Can not download a piece from the seeder. Close connection with the seeder '
+                          f'(response: {response_seeder})')
                     return
-
+                if not receive_successfully:
+                    continue
                 # Locking access to shared_table (collision -> data hazard)
                 with lock_update_table:
                     # ----: update pieces_state_table (shared_table) here
@@ -551,7 +561,7 @@ class Peer:
 
         # Create a remain pieces list (all pieces is in the 'processing' and 'pending' state)
         remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
-        print('Debug: remain_pieces, ', remain_pieces)
+        # print('Debug: remain_pieces, ', remain_pieces)
         # Create a new file node in uncompleted_list
         uncompleted_file_dict = {
             'info_hash': info_hash,
@@ -562,9 +572,9 @@ class Peer:
         # Allocate peers to all pieces (pieces_num and peers_num)
         peers_num_remain = peers_num
 
-        print('Debug(11): ', peers_list)
-        print('Debug(12): ', peers_num_remain)
-        print('Debug(13): ', pieces_state_table)
+        # print('Debug(11): ', peers_list)
+        # print('Debug(12): ', peers_num_remain)
+        # print('Debug(13): ', pieces_state_table)
 
         for piece_id in range(0, len(pieces_state_table)):
             if peers_num_remain > 0:
@@ -585,6 +595,7 @@ class Peer:
             remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
             # Notify to user about remain pieces
             print(f'Info: The number of remaining pieces to download: {len(remain_pieces)} piece(s) ({remain_pieces})')
+            print(f'Info: Download: {100 - round(len(remain_pieces) / pieces_num, 2) * 100}%')
             # Update every 0.5 second
             time.sleep(0.5)
 
@@ -849,12 +860,12 @@ class Peer:
         # Handshake (receiver -> sender)
         packet = self.receive_message(receiver_socket)  # Get packet from receiver
 
-        print('Debug(-1): ', packet)
+        # print('Debug(-1): ', packet)
         if not self.message_seeder_checking(packet, 'HEADER', 'type'):
             print('Info: the response of a leecher is invalid (-1)')
             return
 
-        print('Debug(0): ', packet)
+        # print('Debug(0): ', packet)
         if packet['HEADER']['type'] == "SYNC":  # If SYNC, then SYNC accept
             send_message_leecher(receiver_socket_in=receiver_socket, msg_type='SYNC_ACK', source_ip_in=self.host, source_port_in=listen_port)
             # self.send_message(receiver_socket, packet)
@@ -878,7 +889,7 @@ class Peer:
             # Get message type
             message_type = packet['HEADER']['type']
 
-            print('Debug(1): ', packet)
+            # print('Debug(1): ', packet)
             if message_type == 'FINISH':
                 return
             elif not message_type == 'REQ':
@@ -916,10 +927,14 @@ class Peer:
 
                 # If the file exist, send the file
                 needing_file = self.search_chunk_file(piece_path, piece_id)
-                print('Debug(23): ', needing_file)
+                # print('Debug(23): ', needing_file)
 
-                send_successed = send_file(self.host, self.find_unused_port(), dest_host_in, dest_port_in, needing_file)
-                print(f'DEBUGG: SENDDDDDD {send_successed} piece with ID {piece_id} xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
+                # Start sending
+                file_sender = FileSender(dest_host=dest_host_in, dest_port=dest_port_in, file_path=needing_file)
+                file_sender.config_sender(separator_in="<SEPARATOR>", buffer_size_in=self.FTP_PAYLOAD_LENGTH)
+                send_successed = file_sender.send_file()
+
+                # print(f'DEBUGG: SENDDDDDD {send_successed} piece with ID {piece_id} xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
             else:
                 # Nếu sender ko có file đó
                 send_message_leecher(receiver_socket_in=receiver_socket, msg_type='NACK', source_ip_in=self.host,
@@ -1009,7 +1024,7 @@ class Peer:
                 # Save state and completed_list to TorrentList.json
                 self.store_database(-1) # 1-shot task
                 print('Info: Logout successfully')
-                sys.exit(1)
+                break
             self.user_command_queue.put(user_command)
     ######################### Flow method (end) #######################################
 

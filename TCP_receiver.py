@@ -3,7 +3,7 @@ import tqdm
 import os
 
 
-class FTPReceiver:
+class FileReceiver:
     SEPARATOR = "<SEPARATOR>"
     BUFFER_SIZE = 4096  # receive 4096 bytes each time
 
@@ -16,11 +16,15 @@ class FTPReceiver:
         self.client_socket = None
         self.client_address = None
 
+    def config_receiver(self, separator_in, buffer_size_in):
+        self.SEPARATOR = separator_in
+        self.BUFFER_SIZE = buffer_size_in
+
     def start(self):
         self.server_socket.listen(5)  # enable the server to accept connections
-        print(f"[*] Listening as {self.host}:{self.port}")
+        # print(f"[*] Listening as {self.host}:{self.port}")
         self.client_socket, self.client_address = self.server_socket.accept()  # accept connection if there is any
-        print(f"[+] {self.client_address} is connected.")
+        # print(f"[+] {self.client_address} is connected.")
 
     def receive_file(self):
         ########
@@ -42,8 +46,6 @@ class FTPReceiver:
         with open(filename, "wb") as f:
             while True:
                 bytes_read = self.client_socket.recv(self.BUFFER_SIZE)
-                if len(bytes_read) < 100:
-                    print(f'Debug(24): bytes_read: {bytes_read}')
                 if not bytes_read:
                     break  # file transmitting is done
                 f.write(bytes_read)  # write to the file the bytes we just received
