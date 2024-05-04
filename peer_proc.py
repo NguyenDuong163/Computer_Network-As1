@@ -1,13 +1,10 @@
-import sys
 import threading
 import time
-# import shutil
 import json
+from peer_ui import *
 from file_splitter import *
-# from file_splitter import *
-from TCP_sender import *
-from TCP_receiver import *
-# from peer_test_define import *
+from file_sender import *
+from file_receiver import *
 import socket
 import bencodepy
 import queue
@@ -27,6 +24,7 @@ class Peer:
         self.seeder_socket = None
         self.client_socket = None
         self.peer_id = 0
+        self.peer_ui = PeerUI()
         self.completed_list = []
         self.completed_list_lock = 0        # Multi-threading lock
         self.uncompleted_list = []
@@ -56,7 +54,7 @@ class Peer:
         # Username: admin
         # Password: 1
         while not security_code == self.security_code:
-            print("Error: Wrong username or password. Please try again")
+            print("ERROR: Wrong username or password. Please try again")
             # User login
             peer_username = input("Username: ")
             peer_password = input("Password: ")
@@ -75,7 +73,8 @@ class Peer:
             with open(torrent_path, 'r') as file:
                 metainfo_dict = json.load(file)
         else:
-            print("Error: The path of torrent file is not exist")
+            print("ERROR: The path of torrent file is not exist")
+            self.peer_ui.print_textbox_downloader("ERROR: The path of torrent file is not exist")
             return {}
         return metainfo_dict
 
@@ -84,16 +83,20 @@ class Peer:
         pieces_num_key = 'pieces'
         pieces_path_key = 'pieces_path'
         if not isinstance(metainfo_dict, dict):
-            print(f"Error: The torrent file is invalid.")
+            print(f"ERROR: The torrent file is invalid.")
+            self.peer_ui.print_textbox_downloader(f"ERROR: The torrent file is invalid.")
             return False
         if info_hash_key not in metainfo_dict:
-            print(f"Error: The torrent file is invalid.")
+            print(f"ERROR: The torrent file is invalid.")
+            self.peer_ui.print_textbox_downloader(f"ERROR: The torrent file is invalid.")
             return False
         if pieces_num_key not in metainfo_dict:
-            print(f"Error: The torrent file is invalid.")
+            print(f"ERROR: The torrent file is invalid.")
+            self.peer_ui.print_textbox_downloader(f"ERROR: The torrent file is invalid.")
             return False
         if pieces_path_key not in metainfo_dict:
-            print(f"Error: The torrent file is invalid.")
+            print(f"ERROR: The torrent file is invalid.")
+            self.peer_ui.print_textbox_downloader(f"ERROR: The torrent file is invalid.")
             return False
         return True
 
@@ -166,8 +169,7 @@ class Peer:
                 return port_in
         # Release the lock
         self.port_allocation_lock = 0
-        raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
-
+        raise Exception("ERROR: No unused port found in the specified range (You are using too many resources)")
 
     # Searching folder function
     def search_completed_list(self, info_hash):
@@ -187,10 +189,10 @@ class Peer:
 
     def message_seeder_checking(self, response_seeder, key, key_of_key):
         if key not in response_seeder:
-            print("Error: The message of seeder is invalid (-1)")
+            print("ERROR: The message of seeder is invalid (-1)")
             return False
         if key_of_key not in response_seeder["HEADER"]:
-            print("Error: The message of seeder is invalid (0)")
+            print("ERROR: The message of seeder is invalid (0)")
             return False
         return True
 
@@ -206,7 +208,7 @@ class Peer:
             'info_hash': info_hash,
             'pieces': pieces_num
         }
-        # Upadte new dictionary to list
+        # Update new dictionary to list
         self.completed_list.append(new_file_info)
         # Free the lock
         self.completed_list_lock = 0
@@ -250,7 +252,8 @@ class Peer:
             os.makedirs(pieces_folder)
 
         if not os.path.exists(file_path):
-            print('Error: The file does not exist')
+            print('ERROR: The file does not exist')
+            self.peer_ui.print_textbox_uploader('ERROR: The file does not exist')
             return
         # # Destination path =))
         dest_path = os.path.join(pieces_folder, os.path.basename(file_path))
@@ -299,7 +302,7 @@ class Peer:
 
             # Add the new item to the 'self.completed_list' list
             self.completed_list.append(new_item)
-            print(self.completed_list)
+            # print(self.completed_list)
             # Write the data back to the file
             with open('TorrentList.json', 'w') as f:
                 json.dump(data, f, indent=4)
@@ -372,7 +375,8 @@ class Peer:
 
         # Check the existence of the file of torrent file
         if self.file_exists_in_list(info_hash=info_hash):
-            print('Warning: This file exists in your device')
+            print('WARNING: This file exists in your device')
+            self.peer_ui.print_textbox_downloader('WARNING: This file exists in your device')
             return
 
         # Send a downloading request to the tracker (event == 'started)
@@ -380,29 +384,31 @@ class Peer:
         response_dict = self.receive_response_tracker()
         # Check the response
         if 'HEADER' not in response_dict:
-            print('Error: The response of tracker is invalid (the \'HEADER\' key is not included)')
+            print('ERROR: The response of tracker is invalid (the \'HEADER\' key is not included)')
             return
         if 'status' not in response_dict['HEADER']:
-            print('Error: The response of tracker is invalid (the \'status\' key is not included)')
+            print('ERROR: The response of tracker is invalid (the \'status\' key is not included)')
             return
         response_status = response_dict['HEADER']['status']
         if response_status == '404':
-            print('Warning: No peer in the swarm has this file. Cancel downloading')
+            print('WARNING: No peer in the swarm has this file. Cancel downloading')
+            self.peer_ui.print_textbox_downloader('WARNING: No peer in the swarm has this file. Cancel downloading')
             return
         elif not response_status == '200':
-            print('Error: The status value is invalid')
+            print('ERROR: The status value is invalid')
             return
         # Check and Get peer_list from response message
         if 'BODY' not in response_dict:
-            print('Error: The response of tracker is invalid (the \'BODY\' key is not included)')
+            print('ERROR: The response of tracker is invalid (the \'BODY\' key is not included)')
             return
         if 'peers' not in response_dict['BODY']:
-            print('Error: The response of tracker is invalid (the \'peers\' key is not included)')
+            print('ERROR: The response of tracker is invalid (the \'peers\' key is not included)')
             return
         peers_list = self.get_peers_list_msg(response_dict)  # [('127:0:0:1', 5000), ('127:0:0:2', 5001)]
 
         # Notify to the user about the number of peers
-        print(f'Info: There are {len(peers_list)} peers that have this file in the swarm')
+        print(f'INFO: There are {len(peers_list)} peers that have this file in the swarm')
+        self.peer_ui.print_textbox_downloader(f'INFO: There are {len(peers_list)} peers that have this file in the swarm')
 
         #  Get pieces_num and peers_num and generate lock for multi-threading
         peers_num = len(peers_list)
@@ -467,7 +473,10 @@ class Peer:
                 return
 
             if not response_seeder["HEADER"]['type'] == 'SYNC_ACK':
-                print('Warning: Can not handshake with a seeder. Close connection with the seeder')
+                print('WARNING: Can not handshake with a seeder. Close connection with the seeder')
+                self.peer_ui.print_textbox_downloader(
+                    'WARNING: Can not handshake with a seeder. Close connection with the seeder')
+
                 with lock_update_table:
                     shared_table[piece_id_in] = 'pending'
                 return
@@ -495,7 +504,7 @@ class Peer:
                     response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
                 except socket.timeout:
                     # Todo: mất kết nối đến seeder, đưa piece hiện tại vào trạng thái pending
-                    print('Warning: Can not request a seeder for a piece. Close connection with the seeder')
+                    print('WARNING: Can not request a seeder for a piece. Close connection with the seeder')
                     with lock_update_table:
                         shared_table[piece_id_in] = 'pending'
                 # print(f'Debug(28): Leecher receives a packet with content: {response_seeder}')
@@ -505,7 +514,9 @@ class Peer:
                 if not self.message_seeder_checking(response_seeder, "HEADER", 'type'):
                     return
                 if response_seeder["HEADER"]['type'] == 'NACK':
-                    print('Warning: Can not find out the piece. Close connection with the seeder')
+                    print('WARNING: Can not find out the piece from a seeder. Close connection with the seeder')
+                    self.peer_ui.print_textbox_downloader(
+                        'WARNING: Can not find out the piece from a seeder. Close connection with the seeder')
                     return
 
                 # leecher_ftp_socket.start()
@@ -521,11 +532,15 @@ class Peer:
                 except:
                     # Skip the 'COMPLETED' response from seeder
                     # response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
-                    print(f'Warning: Reset pieces transfer connection (piece ID: {piece_id_in}, sender address: {sender_address_in})------------------')
+                    print(f'WARNING: Reset pieces transfer connection (piece ID: {piece_id_in}, sender address: {sender_address_in})')
+                    self.peer_ui.print_textbox_downloader(
+                        f'WARNING: Reset pieces transfer connection (piece ID: {piece_id_in}, sender address: {sender_address_in})')
                     receive_successfully = False
                     # continue
                 # Notify to sthe user
-                print(f'Info: Successfully received piece with ID {piece_id_in}.')
+                print(f'INFO: Successfully received piece with ID {piece_id_in}.')
+                self.peer_ui.print_textbox_downloader(
+                    f'INFO: Successfully received piece with ID {piece_id_in}.')
                 # Receive completed message of seeder
                 response_seeder = None # Clear the buffer
                 response_seeder = self.receive_message_seeder(socket_in=leecher_socket)
@@ -533,8 +548,11 @@ class Peer:
                     return
                 # Response checking
                 if not response_seeder["HEADER"]['type'] == 'COMPLETED':
-                    print(f'Warning: Can not download a piece from the seeder. Close connection with the seeder '
+                    print(f'WARNING: Can not download a piece from the seeder. Close connection with the seeder '
                           f'(response: {response_seeder})')
+                    self.peer_ui.print_textbox_downloader(
+                        f'WARNING: Can not download a piece from the seeder. Close connection with the seeder '
+                        f'(response: {response_seeder})')
                     return
                 if not receive_successfully:
                     continue
@@ -594,8 +612,12 @@ class Peer:
             # Update remain_pieces
             remain_pieces = [index for index, element in enumerate(pieces_state_table) if element != 'completed']
             # Notify to user about remain pieces
-            print(f'Info: The number of remaining pieces to download: {len(remain_pieces)} piece(s) ({remain_pieces})')
-            print(f'Info: Download: {100 - round(len(remain_pieces) / pieces_num, 2) * 100}%')
+            print(f'INFO: The number of remaining pieces to download: {len(remain_pieces)} piece(s) ({remain_pieces})')
+            self.peer_ui.print_textbox_downloader(
+                f'INFO: The number of remaining pieces to download: {len(remain_pieces)} piece(s) ({remain_pieces})')
+            print(f'INFO: Download: {((len(remain_pieces) / pieces_num) * 100):.1f}%')
+            self.peer_ui.print_textbox_downloader(
+                f'INFO: Download: {((len(remain_pieces) / pieces_num) * 100):.1f}%')
             # Update every 0.5 second
             time.sleep(0.5)
 
@@ -605,17 +627,19 @@ class Peer:
                 del self.uncompleted_list[file_index]
 
         # Notify to the user: All pieces are downloaded
-        print('Info: All pieces are downloaded')
-
+        print('INFO: All pieces are downloaded')
+        self.peer_ui.print_textbox_downloader('INFO: All pieces are downloaded')
         # Merge file
-        print('Info: Reassembling the file')
+        print('INFO: Reassembling the file')
+        self.peer_ui.print_textbox_downloader('INFO: Reassembling the file')
         reassemble_file(pieces_path, '/pieces_folder')
 
         # Notify to the user
         pieces_path_split = pieces_path.split('\\')
         folder_name = pieces_path_split[len(pieces_path_split) - 1]
         file_name = folder_name[:folder_name.rfind('_')] + '.' + folder_name[folder_name.rfind('_') + 1:]
-        print(f'Info: The file has been added to the pieces_folder\\{file_name} directory')
+        print(f'INFO: The file has been added to the pieces_folder\\{file_name} directory')
+        self.peer_ui.print_textbox_downloader(f'INFO: The file has been added to the pieces_folder\\{file_name} directory')
         self.add_completed_list(pieces_path=pieces_path, info_hash=info_hash, pieces_num=pieces_num)
 
         # Send 'completed' message to the tracker
@@ -624,22 +648,22 @@ class Peer:
     def handle_user_command(self, user_command):
         # Parse the user command
         if ':' not in user_command:
-            print('Error: The command is invalid (\':\')')
+            print('ERROR: The command is invalid (\':\')')
             return
         command_split = user_command.split(':')
         if not len(command_split) == 2:
-            print('Error: The command is invalid (\'wrong format\')')
+            print('ERROR: The command is invalid (\'wrong format\')')
             return
         command_type = command_split[0]
         command_param = command_split[1]
         if command_type == 'Download':
-            print('Info: Handling the downloading command')
+            print('INFO: Handling the downloading command')
             self.download_handle(command_param)
         elif command_type == 'Upload':
-            print('Info: Handling the uploading command')
+            print('INFO: Handling the uploading command')
             self.upload_handle(command_param)
         else:
-            print("Error: Wrong command format (command type)")
+            print("ERROR: Wrong command format (command type)")
         # if type of the command is Uploading
         #       upload_handle():
         #       -> Copy file vào pieces_folder
@@ -745,21 +769,22 @@ class Peer:
     def handle_response_tracker(self, response_dict):
         # Parse the response
         if 'HEADER' not in response_dict:
-            print('Info: The init message of the tracker is invalid (the \'HEADER\' key is not included)')
+            print('INFO: The init message of the tracker is invalid (the \'HEADER\' key is not included)')
             return 0
         # print(response_dict)
         if 'status' not in response_dict['HEADER']:
-            print('Info: The init message of the tracker is invalid (the \'status\' key is not included)')
+            print('INFO: The init message of the tracker is invalid (the \'status\' key is not included)')
             return 0
         if 'event' not in response_dict['HEADER']:
-            print('Info: The init message of the tracker is invalid (the \'event\' key is not included)')
+            print('INFO: The init message of the tracker is invalid (the \'event\' key is not included)')
             return 0
         status_field = response_dict['HEADER']['status']
         if status_field == '404':  # Wrong information of metainfo file
-            print('Info: ', response_dict['message'])
+            print('INFO: ', response_dict['message'])
             return 0
         elif status_field == '100':  # Wrong username or password
-            print("Info: Connected")
+            print("INFO: Connected")
+            self.peer_ui.print_textbox_torrent("INFO: Connected")
             return 1
 
     def handle_keep_alive_tracker(self):
@@ -800,6 +825,26 @@ class Peer:
                         self.handle_keep_alive_tracker()
                     else:
                         self.tracker_response_queue.put(message)
+
+    def download_button_pressed(self):
+        user_command = 'Download:' + self.peer_ui.get_file_path()
+        self.user_command_queue.put(user_command)
+
+    def create_torrent_button_pressed(self):
+        user_command = 'Upload:' + self.peer_ui.get_file_path()
+        self.user_command_queue.put(user_command)
+
+    def user_cli(self):
+        # User command-line thread
+        while True:
+            time.sleep(0.2)
+            user_command = input("User command-line: ")
+            if user_command == 'logout':
+                # Save state and completed_list to TorrentList.json
+                self.store_database(-1)  # 1-shot task
+                print('INFO: Logout successfully')
+                break
+            self.user_command_queue.put(user_command)
 
     def user_check(self):
         while True:
@@ -862,7 +907,7 @@ class Peer:
 
         # print('Debug(-1): ', packet)
         if not self.message_seeder_checking(packet, 'HEADER', 'type'):
-            print('Info: the response of a leecher is invalid (-1)')
+            print('INFO: the response of a leecher is invalid (-1)')
             return
 
         # print('Debug(0): ', packet)
@@ -884,7 +929,7 @@ class Peer:
                 # Wait for leecher reset and resend the message
                 continue
             if not self.message_seeder_checking(packet, 'HEADER', 'type'):
-                print(f'Error: the response of a leecher is invalid (-2). Packet: {packet}')
+                print(f'ERROR: the response of a leecher is invalid (-2). Packet: {packet}')
                 return
             # Get message type
             message_type = packet['HEADER']['type']
@@ -893,15 +938,15 @@ class Peer:
             if message_type == 'FINISH':
                 return
             elif not message_type == 'REQ':
-                print('Error: the response of a leecher is invalid (-5)')
+                print('ERROR: the response of a leecher is invalid (-5)')
                 return
 
             # This is a request message
             if not self.message_seeder_checking(packet, 'HEADER', 'source_ip'):
-                print('Error: the response of a seeder is invalid')
+                print('ERROR: the response of a seeder is invalid')
                 return
             if not self.message_seeder_checking(packet, 'HEADER', 'source_ftp_port'):
-                print('Error: the response of a seeder is invalid')
+                print('ERROR: the response of a seeder is invalid')
                 return
             dest_host_in = packet['HEADER']['source_ip']
             dest_port_in = packet['HEADER']['source_ftp_port']
@@ -910,17 +955,19 @@ class Peer:
             # Nếu sender có file đó (check 'info_hash' xem có ko)
             # input_info_hash = None
             if not self.message_seeder_checking(packet, 'HEADER', 'info_hash'):
-                print('Error: the response of a seeder is invalid (666)')  # 666
+                print('ERROR: the response of a seeder is invalid (666)')  # 666
                 return
 
             if not self.message_seeder_checking(packet, 'HEADER', 'piece_id'):
-                print('Error: the response of a seeder is invalid (777)')  # 777
+                print('ERROR: the response of a seeder is invalid (777)')  # 777
                 return
             piece_id = packet['HEADER']['piece_id']
             piece_path = self.search_completed_list(packet['HEADER']['info_hash'])
             send_successed = False
             if piece_path:
-                print('Info: Sending a piece')
+                print('INFO: Sending a piece')
+                self.peer_ui.print_textbox_uploader('INFO: Sending a piece')
+
                 send_message_leecher(receiver_socket_in=receiver_socket, msg_type='ACK', source_ip_in=self.host,
                                      source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
                                      piece_id_in=piece_id)
@@ -942,13 +989,15 @@ class Peer:
                                      piece_id_in=piece_id)
 
             if send_successed:
-                print(f'DEBUGG: send a piece with ID {piece_id} +++++++++++++++++++')
+                # print(f'DEBUGG: send a piece with ID {piece_id} +++++++++++++++++++')
                 send_message_leecher(receiver_socket_in=receiver_socket, msg_type='COMPLETED', source_ip_in=self.host,
                                      source_port_in=listen_port, info_hash_in=packet['HEADER']['info_hash'],
                                      piece_id_in=piece_id)
-                print(f'Info: Send a piece with ID {piece_id} to leecher successfully')
+                print(f'INFO: Send a piece with ID {piece_id} to leecher successfully')
+                self.peer_ui.print_textbox_uploader(f'INFO: Send a piece with ID {piece_id} to leecher successfully')
             else:
-                print(f'Info: Failure to send a piece with ID {piece_id} to leecher')
+                print(f'INFO: Failure to send a piece with ID {piece_id} to leecher')
+                self.peer_ui.print_textbox_uploader(f'INFO: Failure to send a piece with ID {piece_id} to leecher')
                 # Send this packet to Receiver
                 # Continue
 
@@ -965,7 +1014,8 @@ class Peer:
     ######################### Flow method (start) #######################################
     def establish_connection(self):
         info_hash = ''
-        print("Info: Connecting to the tracker ......")
+        print("INFO: Connecting to the tracker ......")
+        self.peer_ui.print_textbox_torrent("INFO: Connecting to the tracker ......")
 
         self.send_request_tracker(info_hash, self.peer_id, 'INIT', self.completed_list)
 
@@ -977,6 +1027,9 @@ class Peer:
     def start(self):
         # Load the previous param of the peer
         self.load_param("TorrentList.json")
+
+        # Setup UI
+        self.peer_ui.setup_ui(self.download_button_pressed, self.create_torrent_button_pressed)
 
         # User login
         # self.user_login()
@@ -1001,9 +1054,6 @@ class Peer:
         #                       -> user_check(__main__): receive user's command and store to a queue
         #                       -> user_handle: Handle the command of user
         #                       -> store_database: Store every 5 seconds
-        #                       (delete) -> maintain_connection (keep-alive and updating metainfo message with the tracker)
-        #                       (delete) -> user_download_check: user want to download a new file  -> "start downloading" stage
-        #                       (delete) -> user_upload_check: user want to upload a new torrent file to tracker
         leecher_check_thread = threading.Thread(target=self.leecher_check)
         leecher_check_thread.start()
 
@@ -1016,16 +1066,11 @@ class Peer:
         store_database_thread = threading.Thread(target=self.store_database)
         store_database_thread.start()
 
-        # User command-line thread
-        while True:
-            time.sleep(0.2)
-            user_command = input("User command-line: ")
-            if user_command == 'logout':
-                # Save state and completed_list to TorrentList.json
-                self.store_database(-1) # 1-shot task
-                print('Info: Logout successfully')
-                break
-            self.user_command_queue.put(user_command)
+        user_command_line_thread = threading.Thread(target=self.user_cli)
+        user_command_line_thread.start()
+
+        # UI start
+        self.peer_ui.start()
     ######################### Flow method (end) #######################################
 
 
@@ -1038,12 +1083,12 @@ def find_unused_port(start_port=5003, end_port=65535):
                 # Port is already in use
                 continue
             return port_in
-    raise Exception("Error: No unused port found in the specified range (You are using too many resources)")
+    raise Exception("ERROR: No unused port found in the specified range (You are using too many resources)")
 
 
 if __name__ == '__main__':
     port = find_unused_port()
-    print(f'Info: Port {port}')
+    print(f'INFO: Port {port}')
     peer = Peer('127.0.0.1', port)
     peer.start()
     print('--------End-----------')

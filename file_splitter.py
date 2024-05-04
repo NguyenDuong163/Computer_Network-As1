@@ -12,7 +12,7 @@ def file_split(file_path: str, chunk_size: int):
                         break  # Đã đọc hết tệp
                     yield chunk
         except FileNotFoundError:
-            print(f"Can not find: {file_path}")
+            print(f"Error: Can not find {file_path}")
 
     # def save_chunks_to_directory(chunks: list, output_directory: str, file_name: str, file_exten: str):
     #     try:
@@ -49,8 +49,6 @@ def file_split(file_path: str, chunk_size: int):
     # Check if the new folder exists, if not, create it
     if not os.path.exists(new_folder_path):
         os.makedirs(new_folder_path)
-
-    print('hehehehh', os.path.exists(new_folder_path))
 
     # Move the chunk files to the new folder
     # for i in range(len(chunks)):
